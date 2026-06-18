@@ -1,14 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useSuspenseQuery, queryOptions } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getDashboardStats } from "@/lib/dashboard.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MessageSquare, AlertCircle, Users, Truck } from "lucide-react";
-
-const statsQuery = queryOptions({
-  queryKey: ["dashboard-stats"],
-  queryFn: () => getDashboardStats(),
-});
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
@@ -16,10 +11,14 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 
 function Dashboard() {
   const fetcher = useServerFn(getDashboardStats);
-  const { data } = useSuspenseQuery({
+  const { data } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: () => fetcher(),
   });
+
+  if (!data) return <div className="text-muted-foreground">טוען...</div>;
+
+
 
   const cards = [
     { title: "הודעות היום", value: data.messagesToday, icon: MessageSquare },
@@ -48,4 +47,3 @@ function Dashboard() {
   );
 }
 
-export { statsQuery };
