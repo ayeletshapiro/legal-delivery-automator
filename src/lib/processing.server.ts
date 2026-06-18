@@ -598,17 +598,17 @@ async function resolveClientId(
     if (nameHit) return { clientId: nameHit.id, matched: true };
   }
 
-  // Fallback: scan the raw message text for any alias or client name (whole-word match)
-  const normText = ` ${normalize(rawText)} `;
+  // Fallback: scan the raw message text for any alias or client name (token-boundary match)
+  const textTokens = ` ${tokenize(rawText).join(" ")} `;
   const candidates = new Set<string>();
   for (const a of allAliases) {
-    const n = normalize(a.alias);
-    if (n && normText.includes(` ${n} `)) candidates.add(a.client_id);
+    const p = tokenize(a.alias).join(" ");
+    if (p && textTokens.includes(` ${p} `)) candidates.add(a.client_id);
   }
   for (const c of activeClients) {
     if (c.is_miscellaneous) continue;
-    const n = normalize(c.client_name);
-    if (n && normText.includes(` ${n} `)) candidates.add(c.id);
+    const p = tokenize(c.client_name).join(" ");
+    if (p && textTokens.includes(` ${p} `)) candidates.add(c.id);
   }
   if (candidates.size === 1) {
     return { clientId: [...candidates][0], matched: true };
