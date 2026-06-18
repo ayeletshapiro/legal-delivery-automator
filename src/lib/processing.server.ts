@@ -472,52 +472,49 @@ interface ParsedDelivery {
   delivery_date: string | null; // YYYY-MM-DD
   contact_ordered_by: string | null;
   notes: string | null;
+  /** True only when the message explicitly mentions VAT (כולל מע"מ / לפני מע"מ / נטו / ברוטו / +מע"מ). */
+  vat_explicit: boolean;
 }
 
 const SYSTEM_PROMPT = `You extract a single legal-document delivery task from a SHORT Hebrew WhatsApp message sent by an attorney/firm to a courier service.
 
 Return STRICT JSON only, matching this schema:
 {
-  "client_name": string | null,         // The LAW FIRM / LAWYER that ORDERED the delivery (the sender's identification). NOT the recipient of the delivery.
-  "description": string,                // Short Hebrew description of WHAT to deliver and TO WHOM/WHERE (court, address, person).
-  "price": number | null,               // Numeric NET price in NIS (BEFORE VAT) if mentioned. See VAT rules below. null if no price mentioned.
-  "delivery_date": string | null,       // ISO date YYYY-MM-DD if mentioned ("מחר", "ביום ראשון", "15/3"). null = today.
+  "client_name": string | null,         // The LAW FIRM / LAWYER that ORDERED the delivery (the sender's identification). NOT the recipient.
+  "description": string,                // Short Hebrew description of WHAT to deliver and TO WHOM/WHERE.
+  "price": number | null,               // See PRICE & VAT rules below. null if no price mentioned.
+  "delivery_date": string | null,       // ISO date YYYY-MM-DD if mentioned. null = today.
   "contact_ordered_by": string | null,  // Name of the person who placed the order, if mentioned.
-  "notes": string | null                // Extra remarks (urgency, phone, etc). Append VAT note when applicable (see below).
+  "notes": string | null,               // Extra remarks. Append a VAT note when applicable (see below).
+  "vat_explicit": boolean               // true ONLY if the message explicitly signals VAT, false otherwise.
 }
 
 CRITICAL RULES:
 - Output JSON only. No markdown, no commentary.
-- ALWAYS extract description, price, and date even if client_name is null. The client can be clarified later — extraction must still succeed.
-- description is REQUIRED and must be non-empty Hebrew text describing the delivery task itself (e.g. "מסירה לעורך דין לוי בבני ברק").
-- client_name: ONLY the ordering firm/lawyer, typically appearing as a standalone label at the START of the message (e.g. "הלפר", "כהן ושות'", "משרד X"). 
-  * If the message starts directly with the delivery task ("היום מסירה...", "מסירה ל...", "שליחות ל...") → client_name = null. The name appearing inside "ל[X]" is the RECIPIENT, not the client.
-  * Only return a client_name when there is a clear sender label separate from the delivery body.
+- ALWAYS extract description, price, and date even if client_name is null. Extraction must still succeed.
+- description is REQUIRED, non-empty Hebrew text describing the delivery task itself.
+- client_name: ONLY the ordering firm/lawyer at the START of the message (e.g. "הלפר", "כהן ושות׳", "משרד X").
+  * If the message starts directly with the task ("היום מסירה...", "מסירה ל...") → client_name = null. A name inside "ל[X]" is the RECIPIENT, not the client.
 - Numbers in Hebrew words: "שמונים שקל"=80, "מאה"=100, "מאה וחמישים"=150, "מאתיים"=200, "חמישים"=50.
 - Dates: "היום"=today, "מחר"=tomorrow. Use the provided "today" date as reference.
 
+PRICE & VAT — VAT rate is 18%:
+- DEFAULT (no VAT keyword): the courier means the FINAL agreed amount. Set "price" to the number as-is and set "vat_explicit"=false. Do NOT divide and do NOT multiply.
+- Message says price WITH VAT ("כולל מע\"מ", "אחרי מע\"מ", "ברוטו"): divide by 1.18, round to 2 decimals, set "vat_explicit"=true, and add a note like "מחיר בהודעה: 40₪ כולל מע\"מ".
+- Message says price BEFORE VAT ("לפני מע\"מ", "בלי מע\"מ", "+מע\"מ", "פלוס מע\"מ", "נטו"): use as-is, set "vat_explicit"=true, and add a note like "מחיר בהודעה: 40₪ לפני מע\"מ".
+
 EXAMPLES:
 Input: "היום מסירה לעורך דין לוי בבני ברק, שמונים שקל"
-Output: {"client_name": null, "description": "מסירה לעורך דין לוי בבני ברק", "price": 80, "delivery_date": null, "contact_ordered_by": null, "notes": null}
+Output: {"client_name": null, "description": "מסירה לעורך דין לוי בבני ברק", "price": 80, "delivery_date": null, "contact_ordered_by": null, "notes": null, "vat_explicit": false}
 
-Input: "כהן ושות׳ — מחר מסירה לבית משפט השלום ת״א, 120"
-Output: {"client_name": "כהן ושות׳", "description": "מסירה לבית משפט השלום ת״א", "price": 120, "delivery_date": null, "contact_ordered_by": null, "notes": null}
-
-VAT (מע"מ) handling — VAT rate is 18%:
-- The "price" field MUST ALWAYS be the NET price (before VAT). The spreadsheet computes VAT automatically.
-- If the message mentions a price WITH VAT (e.g. "40 שח כולל מעמ", "כולל מע\"מ", "אחרי מע\"מ", "ברוטו"): divide the amount by 1.18 and round to 2 decimals. Example: "40 כולל מעמ" → price = 33.90.
-- If the message mentions a price BEFORE VAT (e.g. "40 לפני מעמ", "בלי מעמ", "+ מעמ", "פלוס מעמ", "נטו"): use the amount as-is.
-- If VAT is not mentioned: assume the amount is already NET and use it as-is.
-- When you performed a VAT conversion, append a short Hebrew note to "notes" like: "מחיר בהודעה: 40₪ כולל מע\"מ" so the original is preserved.`;
-
-
-
+Input: "כהן ושות׳ — מחר מסירה לבית משפט השלום ת״א, 120 לפני מע\"מ"
+Output: {"client_name": "כהן ושות׳", "description": "מסירה לבית משפט השלום ת״א", "price": 120, "delivery_date": null, "contact_ordered_by": null, "notes": "מחיר בהודעה: 120₪ לפני מע\"מ", "vat_explicit": true}`;
 
 async function callLovableAI(rawText: string): Promise<ParsedDelivery> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = israelToday();
   const userPrompt = `today=${today}\n\nMESSAGE:\n${rawText}`;
 
   const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
