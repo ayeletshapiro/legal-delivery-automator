@@ -34,23 +34,35 @@ function ErrorsPage() {
                 <TableHead className="text-right">תאריך</TableHead>
                 <TableHead className="text-right">סוג</TableHead>
                 <TableHead className="text-right">תיאור</TableHead>
+                <TableHead className="text-right">הודעה מקורית</TableHead>
+                <TableHead className="text-right">שולח</TableHead>
                 <TableHead className="text-right">סטטוס</TableHead>
                 <TableHead className="text-right">פעולות</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data?.map((e) => (
+              {data?.map((e) => {
+                const msg = e.incoming_messages;
+                const msgText = msg?.transcribed_text || msg?.raw_text || "";
+                return (
                 <TableRow key={e.id}>
-                  <TableCell className="text-xs">{new Date(e.created_at).toLocaleString("he-IL")}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">{new Date(e.created_at).toLocaleString("he-IL")}</TableCell>
                   <TableCell>{e.error_type}</TableCell>
-                  <TableCell className="max-w-md">{e.error_description || "—"}</TableCell>
+                  <TableCell className="max-w-xs">{e.error_description || "—"}</TableCell>
+                  <TableCell className="max-w-sm">
+                    {msgText ? (
+                      <div className="text-xs line-clamp-2 whitespace-pre-wrap" title={msgText}>{msgText}</div>
+                    ) : "—"}
+                  </TableCell>
+                  <TableCell className="text-xs whitespace-nowrap" dir="ltr">{msg?.sender_phone ?? "—"}</TableCell>
                   <TableCell>{e.resolved_at ? <Badge variant="outline">טופל</Badge> : <Badge variant="destructive">פתוח</Badge>}</TableCell>
                   <TableCell>
                     {!e.resolved_at && <Button size="sm" variant="outline" onClick={() => mut.mutate(e.id)}>סמן כטופל</Button>}
                   </TableCell>
                 </TableRow>
-              ))}
-              {data?.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">אין שגיאות</TableCell></TableRow>}
+                );
+              })}
+              {data?.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">אין שגיאות</TableCell></TableRow>}
             </TableBody>
           </Table>
         )}

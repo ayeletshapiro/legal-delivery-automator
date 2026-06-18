@@ -26,10 +26,10 @@ Return STRICT JSON only, matching this schema:
 {
   "client_name": string | null,         // The law firm / lawyer / client this delivery is FOR (often the first word/line). null if unclear.
   "description": string,                // Short Hebrew description of what to deliver and to where (court, address, person).
-  "price": number | null,               // Numeric price in NIS if explicitly mentioned (e.g. "120 שח", "₪80"), else null.
+  "price": number | null,               // Numeric NET price in NIS (BEFORE VAT) if mentioned. See VAT rules below. null if no price mentioned.
   "delivery_date": string | null,       // ISO date YYYY-MM-DD if mentioned ("מחר", "ביום ראשון", "15/3"). null = today.
   "contact_ordered_by": string | null,  // Name of the person who placed the order, if mentioned.
-  "notes": string | null                // Any extra remarks (urgency, contact phone, etc).
+  "notes": string | null                // Any extra remarks (urgency, contact phone, etc). Append VAT note when applicable (see below).
 }
 
 Rules:
@@ -37,7 +37,14 @@ Rules:
 - description is REQUIRED and must be non-empty Hebrew text.
 - client_name: usually the FIRST word or line of the message (a surname like "הלפר", a firm like "כהן ושות'", or "עו\"ד X" / "משרד X"). Extract it even if it's a single word with no title. Only return null if the message clearly has no name at the start.
 - Dates: "היום"=today, "מחר"=tomorrow. Use the provided "today" date as reference.
-- If you cannot extract a description, set description to the raw text.`;
+- If you cannot extract a description, set description to the raw text.
+
+VAT (מע"מ) handling — VAT rate is 18%:
+- The "price" field MUST ALWAYS be the NET price (before VAT). The spreadsheet computes VAT automatically.
+- If the message mentions a price WITH VAT (e.g. "40 שח כולל מעמ", "כולל מע\"מ", "אחרי מע\"מ", "ברוטו"): divide the amount by 1.18 and round to 2 decimals. Example: "40 כולל מעמ" → price = 33.90.
+- If the message mentions a price BEFORE VAT (e.g. "40 לפני מעמ", "בלי מעמ", "+ מעמ", "פלוס מעמ", "נטו"): use the amount as-is.
+- If VAT is not mentioned: assume the amount is already NET (before VAT) and use it as-is.
+- When you performed a VAT conversion (i.e. user said "כולל מע\"מ"), append a short Hebrew note to "notes" like: "מחיר בהודעה: 40₪ כולל מע\"מ" so the original is preserved.`;
 
 
 async function callLovableAI(rawText: string): Promise<ParsedDelivery> {
@@ -154,8 +161,6 @@ export async function writeDeliveryToClientSheet(
 ): Promise<{ writeStatus: string; writeError: string | null }> {
   let writeStatus: string = "pending";
   let writeError: string | null = null;
-
-  if (delivery.price == null) return { writeStatus, writeError };
 
   try {
     const { data: clientRow, error: clientErr } = await supabase
@@ -276,7 +281,7 @@ export async function processIncomingMessage(
       .maybeSingle();
     if (existingErr) throw existingErr;
     if (existingDelivery) {
-      if (matched && existingDelivery.price != null && existingDelivery.write_status !== "נכתב") {
+      if (matched && existingDelivery.write_status !== "נכתב") {
         await writeDeliveryToClientSheet(supabase, {
           deliveryId: existingDelivery.id,
           messageId: existingDelivery.message_id,
@@ -311,7 +316,7 @@ export async function processIncomingMessage(
     }).select("id").single();
     if (delErr) throw delErr;
 
-    if (matched && parsed.price != null) {
+    if (matched) {
       await writeDeliveryToClientSheet(supabase, {
         deliveryId: delivery.id,
         messageId,

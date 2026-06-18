@@ -34,7 +34,7 @@ export const listDeliveries = createServerFn({ method: "POST" })
 
     const { data: rows, error } = await fetchRows();
     if (error) throw error;
-    const repairableRows = (rows ?? []).filter((row) => row.write_status === "ללא גיליון" && row.price != null);
+    const repairableRows = (rows ?? []).filter((row) => row.write_status === "ללא גיליון");
     if (repairableRows.length > 0) {
       const { writeDeliveryToClientSheet } = await import("./processing.server");
       const repairedMessages = new Set<string>();
