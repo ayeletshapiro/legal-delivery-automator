@@ -74,19 +74,9 @@ async function setSheetRtl(spreadsheetId: string): Promise<void> {
   }
 }
 
-/** Ensure headers exist in row 1; if not, write them and switch sheet to RTL. */
+/** Write headers to row 1 and switch sheet to RTL without a pre-read to avoid Sheets read quota. */
 async function ensureHeaders(spreadsheetId: string): Promise<void> {
   const range = "A1:G1";
-  const resp = await gatewayFetch(`/spreadsheets/${spreadsheetId}/values/${range}`);
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(`Sheets API ${resp.status}: ${body.slice(0, 300)}`);
-  }
-  const data = await resp.json();
-  const firstRow: string[] = data?.values?.[0] ?? [];
-  const hasHeaders = firstRow.length > 0 && firstRow.some((c) => (c ?? "").toString().trim() !== "");
-  if (hasHeaders) return;
-
   const putResp = await gatewayFetch(
     `/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
     {
