@@ -21,6 +21,7 @@ const items = [
   { title: "לקוחות", url: "/clients", icon: Users },
   { title: "כינויים", url: "/aliases", icon: Tags },
   { title: "הודעות", url: "/messages", icon: MessageSquare },
+  { title: "בירורים", url: "/clarifications", icon: HelpCircle },
   { title: "שגיאות", url: "/errors", icon: AlertCircle },
   { title: "הגדרות", url: "/settings", icon: Settings },
 ] as const;
