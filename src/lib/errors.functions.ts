@@ -7,7 +7,7 @@ export const listErrors = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("processing_errors")
-      .select("*, incoming_messages(raw_text, transcribed_text, sender_phone, received_at)")
+      .select("*, incoming_messages(raw_text, transcribed_text, sender_phone)")
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) throw error;
