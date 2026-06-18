@@ -796,7 +796,7 @@ export async function processIncomingMessage(
     const parsed = await callLovableAI(text);
     const { clientId, matched } = await resolveClientId(supabase, msg.user_id, parsed.client_name, text);
 
-    const deliveryDate = parsed.delivery_date ?? new Date().toISOString().slice(0, 10);
+    const deliveryDate = isValidIsoDate(parsed.delivery_date) ? parsed.delivery_date : israelToday();
 
     const { data: existingDelivery, error: existingErr } = await supabase
       .from("deliveries")
