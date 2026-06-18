@@ -23,6 +23,9 @@ export const Route = createFileRoute("/_authenticated/deliveries")({
 
 const writeStatusLabels: Record<string, string> = {
   pending: "ממתין",
+  "נכתב": "נכתב",
+  "שגיאה": "שגיאה",
+  "ללא גיליון": "ללא גיליון",
   written: "נכתב",
   failed: "כשל בכתיבה",
   skipped: "דולג",
