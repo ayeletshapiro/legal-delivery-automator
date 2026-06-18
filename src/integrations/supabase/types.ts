@@ -223,6 +223,56 @@ export type Database = {
         }
         Relationships: []
       }
+      outbound_messages: {
+        Row: {
+          body: string
+          created_at: string
+          error_message: string | null
+          from_phone: string | null
+          id: string
+          incoming_message_id: string | null
+          reply_type: string | null
+          status: string
+          to_phone: string
+          twilio_message_sid: string | null
+          user_id: string | null
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          error_message?: string | null
+          from_phone?: string | null
+          id?: string
+          incoming_message_id?: string | null
+          reply_type?: string | null
+          status?: string
+          to_phone: string
+          twilio_message_sid?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          error_message?: string | null
+          from_phone?: string | null
+          id?: string
+          incoming_message_id?: string | null
+          reply_type?: string | null
+          status?: string
+          to_phone?: string
+          twilio_message_sid?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outbound_messages_incoming_message_id_fkey"
+            columns: ["incoming_message_id"]
+            isOneToOne: false
+            referencedRelation: "incoming_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pending_clarifications: {
         Row: {
           created_at: string
@@ -230,6 +280,8 @@ export type Database = {
           id: string
           message_id: string
           raw_text: string
+          reply_sent_at: string | null
+          reply_type: string | null
           resolution: string | null
           resolved_at: string | null
           user_id: string
@@ -240,6 +292,8 @@ export type Database = {
           id?: string
           message_id: string
           raw_text: string
+          reply_sent_at?: string | null
+          reply_type?: string | null
           resolution?: string | null
           resolved_at?: string | null
           user_id: string
@@ -250,6 +304,8 @@ export type Database = {
           id?: string
           message_id?: string
           raw_text?: string
+          reply_sent_at?: string | null
+          reply_type?: string | null
           resolution?: string | null
           resolved_at?: string | null
           user_id?: string
@@ -381,6 +437,8 @@ export type Database = {
         | "missing_details"
         | "transcription_failed"
         | "ignored"
+        | "awaiting_clarification"
+        | "cancelled"
       message_type: "text" | "audio" | "image" | "document"
     }
     CompositeTypes: {
@@ -519,6 +577,8 @@ export const Constants = {
         "missing_details",
         "transcription_failed",
         "ignored",
+        "awaiting_clarification",
+        "cancelled",
       ],
       message_type: ["text", "audio", "image", "document"],
     },

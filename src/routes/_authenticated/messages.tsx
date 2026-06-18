@@ -28,6 +28,8 @@ const statusLabels: Record<string, string> = {
   missing_details: "חסרים פרטים",
   transcription_failed: "תמלול נכשל",
   ignored: "התעלם",
+  awaiting_clarification: "ממתין להבהרה",
+  cancelled: "בוטל",
 };
 
 const typeLabels: Record<string, string> = {
@@ -133,7 +135,7 @@ function MessagesPage() {
                         disabled={processMut.isPending}
                         onClick={() => processMut.mutate(m.id)}
                       >
-                        {m.status === "done" || m.status === "missing_client" ? "עבד מחדש" : "עבד"}
+                        {["done","missing_client","awaiting_clarification","cancelled","failed"].includes(m.status) ? "עבד מחדש" : "עבד"}
                       </Button>
                     )}
 

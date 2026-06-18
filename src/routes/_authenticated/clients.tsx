@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/clients")({
@@ -75,7 +76,14 @@ function ClientsPage() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [editing, setEditing] = useState<null | { id: string; client_name: string }>(null);
+  const [filter, setFilter] = useState<"active" | "archived" | "all">("active");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const filtered = (data ?? []).filter((c) => {
+    if (filter === "active") return !c.is_archived;
+    if (filter === "archived") return c.is_archived;
+    return true;
+  });
 
   async function handleFile(file: File) {
     try {
@@ -159,6 +167,17 @@ function ClientsPage() {
         להישאר ריקה בשורות הנוספות.
       </p>
 
+      <ToggleGroup
+        type="single"
+        value={filter}
+        onValueChange={(v) => v && setFilter(v as "active" | "archived" | "all")}
+        className="justify-start"
+      >
+        <ToggleGroupItem value="active">פעילים</ToggleGroupItem>
+        <ToggleGroupItem value="archived">בארכיון</ToggleGroupItem>
+        <ToggleGroupItem value="all">הכל</ToggleGroupItem>
+      </ToggleGroup>
+
       <Card>
         {isLoading ? (
           <div className="p-8 text-center text-muted-foreground">טוען...</div>
@@ -172,7 +191,7 @@ function ClientsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data?.map((c) => (
+              {filtered.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">
                     {c.client_name}
@@ -199,7 +218,7 @@ function ClientsPage() {
                         size="sm"
                         onClick={() => archiveMut.mutate({ id: c.id, archive: !c.is_archived })}
                       >
-                        {c.is_archived ? "שחזר" : "ארכב"}
+                        {c.is_archived ? "שחזר" : "לארכיון"}
                       </Button>
                     )}
                   </TableCell>
