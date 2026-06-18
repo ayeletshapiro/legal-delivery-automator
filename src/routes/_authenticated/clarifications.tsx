@@ -102,8 +102,8 @@ function ClarificationsPage() {
           </div>
           <p className="font-medium">הכל מסודר!</p>
           <p className="text-sm text-muted-foreground">
-            <Sparkles className="ml-1 inline h-4 w-4" />
             אין בירורים פתוחים כרגע
+            <Sparkles className="mr-1 inline h-4 w-4" />
           </p>
         </Card>
       ) : (
