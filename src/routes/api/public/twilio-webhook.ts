@@ -201,8 +201,17 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
 
             if (profile?.id) {
               try {
-                const { processIncomingMessage } = await import("@/lib/processing.server");
-                await processIncomingMessage(supabaseAdmin, inserted.id);
+                const { tryHandleClarificationReply, processIncomingMessage } = await import("@/lib/processing.server");
+                const handled = await tryHandleClarificationReply(supabaseAdmin, profile.id, senderPhone, transcript);
+                if (handled) {
+                  await supabaseAdmin.from("incoming_messages").update({
+                    status: "done",
+                    error_detail: "תשובת הבהרה לבירור לקוח (קולי)",
+                    processed_at: new Date().toISOString(),
+                  }).eq("id", inserted.id);
+                } else {
+                  await processIncomingMessage(supabaseAdmin, inserted.id);
+                }
               } catch (e) {
                 console.error("[twilio-webhook] audio auto-process error", e);
               }
