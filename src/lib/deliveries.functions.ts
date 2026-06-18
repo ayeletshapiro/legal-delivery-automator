@@ -37,7 +37,18 @@ export const listDeliveries = createServerFn({ method: "POST" })
     const repairableRows = (rows ?? []).filter((row) => row.write_status === "ללא גיליון" && row.price != null);
     if (repairableRows.length > 0) {
       const { writeDeliveryToClientSheet } = await import("./processing.server");
+      const repairedMessages = new Set<string>();
       for (const row of repairableRows) {
+        const dedupeKey = row.message_id ?? row.id;
+        if (repairedMessages.has(dedupeKey)) {
+          await context.supabase.from("deliveries").update({
+            write_status: "skipped",
+            write_error: "דולג — הודעה כפולה שכבר עובדה",
+            written_at: null,
+          }).eq("id", row.id);
+          continue;
+        }
+        repairedMessages.add(dedupeKey);
         await writeDeliveryToClientSheet(context.supabase, {
           deliveryId: row.id,
           messageId: row.message_id,
