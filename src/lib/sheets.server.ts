@@ -108,7 +108,7 @@ export async function createSheetForClient(clientName: string): Promise<string> 
   const resp = await gatewayFetch("/spreadsheets", {
     method: "POST",
     body: JSON.stringify({
-      properties: { title, locale: "he_IL" },
+      properties: { title, locale: "iw_IL" },
       sheets: [
         { properties: { sheetId: 0, title: "שליחויות", rightToLeft: true } },
       ],

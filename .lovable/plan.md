@@ -1,66 +1,41 @@
-# RTL וגיליון אוטומטי לכל לקוח
+## מה מצאתי
 
-## 1. RTL בגיליון Google Sheets
+בדקתי את ההודעה האחרונה במסד הנתונים:
+- הלקוח `משרד כהן ושות'` זוהה נכון, המחיר 120 ש"ח נחלץ, אבל `google_sheet_id` של הלקוח נשאר ריק והסטטוס `ללא גיליון` ללא הודעת שגיאה.
 
-הבעיה: גיליון Google חדש הוא LTR כברירת מחדל, אז עמודה A מופיעה משמאל — לא מתאים לעברית.
+שני גורמים עצמאיים מסבירים את זה:
 
-הפתרון: קריאה ל-`batchUpdate` של Sheets כדי להגדיר את הגיליון כ-RTL:
-
+### 1. באג ב-locale (קוד) — חוסם יצירה אוטומטית
+ניסיתי לקרוא ל-API של Google Sheets ישירות עם הפרמטרים שבקוד:
 ```
-POST /spreadsheets/{id}:batchUpdate
-{ "requests": [{ "updateSheetProperties": {
-    "properties": { "sheetId": 0, "rightToLeft": true },
-    "fields": "rightToLeft"
-}}]}
+"locale": "he_IL"  →  400 Invalid: Unsupported locale: he_IL
+"locale": "iw_IL"  →  הצלחה (זה הקוד הישן של עברית ב-Google)
 ```
+כלומר ברגע שהקוד החדש כן ירוץ — `createSheetForClient` תזרוק שגיאת 400 ויצירת הגיליון תיכשל בכל מקרה.
 
-כך עמודה A (תאריך) תוצג בצד ימין ו-G (סה"כ אחרי מע"מ) בצד שמאל. נעשה זאת פעם אחת בלבד — כשיוצרים כותרות חדשות ב-`ensureHeaders` (כך גם גיליונות ישנים שלא היו RTL ייכנסו לתבנית הנכונה כשנכתב לראשונה).
+### 2. הקוד החדש עדיין לא פרוס
+ה-webhook של WhatsApp תמיד פוגע ב-deployment המפורסם (`legal-delivery-automator.lovable.app`), לא ב-preview. הפיצ'ר של יצירה אוטומטית נוסף בסבב הקודם אבל לא פורסם, ולכן ההודעה רצה על קוד ישן שבכלל לא מנסה ליצור גיליון — רק מסמן `ללא גיליון`.
 
-## 2. עמוד השליחויות (deliveries.tsx) — סדר עמודות
+## תיקון
 
-האפליקציה כבר RTL כללית. אקרא את `src/routes/_authenticated/deliveries.tsx` ואסדר את עמודות הטבלה לפי הסדר שביקשת (מימין לשמאל):
-תאריך → תיאור → הזמין → הערות → מחיר → סה"כ ללא מע"מ → סה"כ אחרי מע"מ → סטטוס כתיבה.
-שתי עמודות הסה"כ יחושבו בצד הלקוח (price ו-`price × 1.18`) כדי להציג את אותם ערכים כמו בגיליון.
-
-## 3. יצירה אוטומטית של גיליון ללקוח חדש
-
-זרימה ב-`processing.server.ts` אחרי שזיהינו לקוח (matched) ויש מחיר:
-
+### A. שינוי קוד יחיד ב-`src/lib/sheets.server.ts`
+ב-`createSheetForClient` להחליף:
 ```
-load client (google_sheet_id, client_name)
-if !google_sheet_id:
-  sheetId = await createSheetForClient(client_name)
-  update clients set google_sheet_id = sheetId where id = clientId
-appendDeliveryToSheet(sheetId, ...)
+"locale": "he_IL"  →  "locale": "iw_IL"
 ```
+(זה ה-locale שגוגל מקבלת לעברית. ה-RTL וכותרת הגיליון בעברית ממשיכים לעבוד.)
 
-### `createSheetForClient(clientName)` חדשה ב-`sheets.server.ts`
+### B. פרסום
+אחרי השינוי — צריך ללחוץ Publish כדי שה-webhook המפורסם יקבל את הקוד החדש. בלי זה, גם אחרי תיקון ה-locale שום הודעה חדשה לא תיצור גיליון.
 
-```
-POST /spreadsheets
-{
-  "properties": { "title": `שליחויות - ${clientName}`, "locale": "he_IL" },
-  "sheets": [{ "properties": { "title": "שליחויות", "rightToLeft": true } }]
-}
-```
+### C. אימות
+לאחר הפרסום — לשלוח שוב הודעה דומה ("X מסמכים ל... 120 שח") ולוודא:
+- ב-`clients`: `google_sheet_id` של "משרד כהן ושות'" התמלא
+- ב-`deliveries`: `write_status = "נכתב"` וה-`written_at` עודכן
+- בגיליון עצמו: שורה חדשה עם כיוון RTL וכותרות בעברית
 
-מחזיר `spreadsheetId`. מיד אחר כך `ensureHeaders` יכתוב את שורת הכותרות.
+### D. ההודעה שכבר נכשלה
+אופציונלי — אחרי שהמערכת תעבוד, אפשר לעדכן ידנית את השורה הקיימת (`ad0b24c8...`) ל-`write_status = "נכתב"` ולהוסיף אותה לגיליון שייווצר, או להשאיר כפי שהיא. מה שמעדיפה.
 
-### הערות חשובות
-- **בעלות**: הגיליון ייווצר תחת חשבון Google המחובר (כרגע שלך). שיתוף אוטומטי עם מייל הלקוח — דחוי לעתיד לפי בקשתך.
-- **מניעת כפילויות**: נשמור את ה-ID מיד אחרי יצירה כך שלא ייווצרו גיליונות כפולים.
-- **כשל ביצירה**: `write_status = "שגיאה"` + רישום ל-`processing_errors`. ה-ID לא יישמר, כך שניסיון חוזר יצור גיליון חדש.
-
-## 4. עדכון מסך הלקוחות
-
-שדה ה-`google_sheet_id` יישאר עריך (אפשר להחליף ידנית). נוסיף placeholder/רמז קטן: "ייווצר אוטומטית בהודעה הראשונה" כשהשדה ריק.
-
-## קבצים שייגעו
-
-- `src/lib/sheets.server.ts` — `createSheetForClient` חדשה, קריאת `batchUpdate` ל-rightToLeft ב-`ensureHeaders`.
-- `src/lib/processing.server.ts` — יצירה אוטומטית + שמירת ה-ID חזרה בטבלת clients.
-- `src/routes/_authenticated/deliveries.tsx` — סדר עמודות + שתי עמודות סה"כ.
-- `src/routes/_authenticated/clients.tsx` — placeholder לשדה ה-ID.
-
-## שדרוג עתידי (לזכור)
-שיתוף אוטומטי של הגיליון עם מייל הלקוח כ-editor אחרי יצירתו — דורש הוספת `client_email` לטבלת clients. לא נעשה עכשיו.
+## מה אני צריך ממך
+רק לאשר את התוכנית כדי שאתקן את ה-locale, ואז שתלחצי Publish.
