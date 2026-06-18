@@ -1,0 +1,138 @@
+/**
+ * Google Sheets writer. Server-only.
+ * Appends delivery rows to a client's spreadsheet via the Lovable connector gateway.
+ */
+
+const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_sheets/v4";
+
+const HEADERS = [
+  "תאריך",
+  "תיאור",
+  "הזמין",
+  "הערות",
+  "מחיר",
+  'סה"כ ללא מע"מ',
+  'סה"כ אחרי מע"מ',
+];
+
+const VAT_RATE = 0.18;
+
+export interface DeliveryRow {
+  delivery_date: string; // YYYY-MM-DD
+  description: string;
+  contact_ordered_by: string | null;
+  notes: string | null;
+  price: number | null;
+}
+
+function authHeaders() {
+  const lovableKey = process.env.LOVABLE_API_KEY;
+  const connKey = process.env.GOOGLE_SHEETS_API_KEY;
+  if (!lovableKey) throw new Error("LOVABLE_API_KEY חסר");
+  if (!connKey) throw new Error("Google Sheets לא מחובר (GOOGLE_SHEETS_API_KEY חסר)");
+  return {
+    Authorization: `Bearer ${lovableKey}`,
+    "X-Connection-Api-Key": connKey,
+    "Content-Type": "application/json",
+  };
+}
+
+async function gatewayFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const url = `${GATEWAY_URL}${path}`;
+  const resp = await fetch(url, {
+    ...init,
+    headers: { ...authHeaders(), ...(init.headers || {}) },
+  });
+  return resp;
+}
+
+/** Format Hebrew date as DD/MM/YYYY for display in sheet. */
+function formatDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-");
+  if (!y || !m || !d) return isoDate;
+  return `${d}/${m}/${y}`;
+}
+
+/** Ensure headers exist in row 1; if not, write them. */
+async function ensureHeaders(spreadsheetId: string): Promise<void> {
+  const range = "A1:G1";
+  const resp = await gatewayFetch(`/spreadsheets/${spreadsheetId}/values/${range}`);
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(`Sheets API ${resp.status}: ${body.slice(0, 300)}`);
+  }
+  const data = await resp.json();
+  const firstRow: string[] = data?.values?.[0] ?? [];
+  const hasHeaders = firstRow.length > 0 && firstRow.some((c) => (c ?? "").toString().trim() !== "");
+  if (hasHeaders) return;
+
+  const putResp = await gatewayFetch(
+    `/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ range, majorDimension: "ROWS", values: [HEADERS] }),
+    },
+  );
+  if (!putResp.ok) {
+    const body = await putResp.text().catch(() => "");
+    throw new Error(`כשל בכתיבת כותרות ${putResp.status}: ${body.slice(0, 300)}`);
+  }
+}
+
+export interface SheetWriteResult {
+  ok: boolean;
+  error?: string;
+}
+
+export async function appendDeliveryToSheet(
+  spreadsheetId: string,
+  delivery: DeliveryRow,
+): Promise<SheetWriteResult> {
+  try {
+    if (!spreadsheetId || !spreadsheetId.trim()) {
+      return { ok: false, error: "לא הוגדר מזהה גיליון" };
+    }
+
+    await ensureHeaders(spreadsheetId);
+
+    const price = delivery.price ?? 0;
+    const totalBeforeVat = price;
+    const totalAfterVat = Number((price * (1 + VAT_RATE)).toFixed(2));
+
+    const row = [
+      formatDate(delivery.delivery_date),
+      delivery.description ?? "",
+      delivery.contact_ordered_by ?? "",
+      delivery.notes ?? "",
+      price,
+      totalBeforeVat,
+      totalAfterVat,
+    ];
+
+    const appendResp = await gatewayFetch(
+      `/spreadsheets/${spreadsheetId}/values/A:G:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      {
+        method: "POST",
+        body: JSON.stringify({ range: "A:G", majorDimension: "ROWS", values: [row] }),
+      },
+    );
+
+    if (!appendResp.ok) {
+      const body = await appendResp.text().catch(() => "");
+      let userMsg = `שגיאה ${appendResp.status}`;
+      if (appendResp.status === 403) {
+        userMsg = "אין הרשאת עריכה לגיליון. ודאי שהגיליון משותף עם חשבון Google המחובר.";
+      } else if (appendResp.status === 404) {
+        userMsg = "הגיליון לא נמצא. בדקי שמזהה הגיליון נכון.";
+      } else {
+        userMsg = `${userMsg}: ${body.slice(0, 200)}`;
+      }
+      return { ok: false, error: userMsg };
+    }
+
+    return { ok: true };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "שגיאה לא ידועה בכתיבה לגיליון";
+    return { ok: false, error: msg };
+  }
+}
