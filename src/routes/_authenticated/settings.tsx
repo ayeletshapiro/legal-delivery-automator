@@ -7,13 +7,22 @@ import { getProfile, updateWhatsappPhone } from "@/lib/profile.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
+import { Settings, User, Percent, ShieldCheck, Phone, Lock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
 });
+
+/** Initials for the avatar from an email or name. */
+function initials(value: string): string {
+  const name = value.split("@")[0];
+  const parts = name.split(/[.\-_\s]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
 
 function SettingsPage() {
   const qc = useQueryClient();
@@ -37,54 +46,107 @@ function SettingsPage() {
 
   const vatMut = useMutation({
     mutationFn: (rate: number) => vatFn({ data: { vat_rate: rate } }),
-    onSuccess: () => { toast.success('מע"מ עודכן'); qc.invalidateQueries({ queryKey: ["config"] }); },
+    onSuccess: () => {
+      toast.success('מע"מ עודכן');
+      qc.invalidateQueries({ queryKey: ["config"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const phoneMut = useMutation({
     mutationFn: (p: string | null) => phoneFn({ data: { whatsapp_phone: p } }),
-    onSuccess: () => { toast.success("טלפון עודכן"); qc.invalidateQueries({ queryKey: ["profile"] }); },
+    onSuccess: () => {
+      toast.success("טלפון עודכן");
+      qc.invalidateQueries({ queryKey: ["profile"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const isAdmin = prof.data?.roles.includes("admin");
+  const email = prof.data?.profile?.email ?? "";
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <h2 className="text-2xl font-bold">הגדרות</h2>
+    <div className="max-w-2xl space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary">
+          <Settings className="h-6 w-6 text-primary-foreground" />
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold leading-tight">הגדרות</h2>
+          <p className="text-sm text-muted-foreground leading-tight">פרופיל אישי והגדרות מערכת</p>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>הפרופיל שלי</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            {prof.data?.profile?.email} {isAdmin && <Badge className="mr-2">אדמין</Badge>}
+      {/* Profile card */}
+      <Card className="overflow-hidden">
+        <div className="flex items-center gap-2 border-b bg-muted/30 px-5 py-3">
+          <User className="h-4 w-4 text-muted-foreground" />
+          <span className="font-medium">הפרופיל שלי</span>
+        </div>
+        <CardContent className="space-y-5 p-5">
+          {/* Identity row */}
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-base font-medium text-emerald-700">
+              {email ? initials(email) : "?"}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate font-medium">{email || "—"}</p>
+              {isAdmin && (
+                <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">
+                  <ShieldCheck className="h-3 w-3" />
+                  אדמין
+                </span>
+              )}
+            </div>
           </div>
+
+          {/* WhatsApp phone */}
           <div className="space-y-2">
-            <Label>מספר WhatsApp אישי</Label>
+            <Label className="flex items-center gap-1.5">
+              <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+              מספר WhatsApp אישי
+            </Label>
             <div className="flex gap-2">
               <Input value={phone} onChange={(e) => setPhone(e.target.value)} dir="ltr" placeholder="+972..." />
-              <Button onClick={() => phoneMut.mutate(phone || null)} disabled={phoneMut.isPending}>שמור</Button>
+              <Button onClick={() => phoneMut.mutate(phone || null)} disabled={phoneMut.isPending}>
+                שמור
+              </Button>
             </div>
-            <p className="text-xs text-muted-foreground">משמש לזיהוי הודעות נכנסות בעתיד.</p>
+            <p className="text-xs text-muted-foreground">משמש לזיהוי הודעות נכנסות מהמספר הזה.</p>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>מע"מ</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>אחוז מע"מ (%)</Label>
-            <div className="flex gap-2">
-              <Input type="number" min="0" max="100" step="0.01" value={vatPct} onChange={(e) => setVatPct(e.target.value)} dir="ltr" disabled={!isAdmin} />
-              <Button onClick={() => vatMut.mutate(Number(vatPct) / 100)} disabled={!isAdmin || vatMut.isPending}>שמור</Button>
-            </div>
-            {!isAdmin && <p className="text-xs text-muted-foreground">רק אדמין יכול לשנות.</p>}
+      {/* VAT card */}
+      <Card className="overflow-hidden">
+        <div className="flex items-center gap-2 border-b bg-muted/30 px-5 py-3">
+          <Percent className="h-4 w-4 text-muted-foreground" />
+          <span className="font-medium">מע"מ</span>
+        </div>
+        <CardContent className="space-y-2 p-5">
+          <Label>אחוז מע"מ (%)</Label>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={vatPct}
+              onChange={(e) => setVatPct(e.target.value)}
+              dir="ltr"
+              disabled={!isAdmin}
+            />
+            <Button onClick={() => vatMut.mutate(Number(vatPct) / 100)} disabled={!isAdmin || vatMut.isPending}>
+              שמור
+            </Button>
           </div>
+          {!isAdmin && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Lock className="h-3 w-3" />
+              רק אדמין יכול לשנות את אחוז המע"מ.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
