@@ -118,7 +118,9 @@ export type Database = {
           row_number: number | null
           sheet_name: string | null
           user_id: string
+          write_error: string | null
           write_status: string
+          written_at: string | null
         }
         Insert: {
           client_id: string
@@ -134,7 +136,9 @@ export type Database = {
           row_number?: number | null
           sheet_name?: string | null
           user_id: string
+          write_error?: string | null
           write_status?: string
+          written_at?: string | null
         }
         Update: {
           client_id?: string
@@ -150,7 +154,9 @@ export type Database = {
           row_number?: number | null
           sheet_name?: string | null
           user_id?: string
+          write_error?: string | null
           write_status?: string
+          written_at?: string | null
         }
         Relationships: [
           {
