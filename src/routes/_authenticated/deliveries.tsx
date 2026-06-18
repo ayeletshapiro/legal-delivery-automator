@@ -11,7 +11,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -24,7 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Package, CheckCircle2, Clock, AlertTriangle, FileX } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/deliveries")({
   component: DeliveriesPage,
@@ -41,6 +40,32 @@ const writeStatusLabels: Record<string, string> = {
   awaiting_clarification: "ממתין להבהרה",
 };
 
+/** Map a write_status to a semantic visual style + icon. */
+function statusStyle(status: string): { cls: string; Icon: typeof CheckCircle2 } {
+  if (status === "נכתב" || status === "written") {
+    return { cls: "bg-emerald-50 text-emerald-700 border-emerald-200", Icon: CheckCircle2 };
+  }
+  if (status === "שגיאה" || status === "failed") {
+    return { cls: "bg-red-50 text-red-700 border-red-200", Icon: AlertTriangle };
+  }
+  if (status === "ללא גיליון") {
+    return { cls: "bg-slate-50 text-slate-600 border-slate-200", Icon: FileX };
+  }
+  // pending / awaiting_clarification / skipped
+  return { cls: "bg-amber-50 text-amber-700 border-amber-200", Icon: Clock };
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const { cls, Icon } = statusStyle(status);
+  const label = writeStatusLabels[status] ?? status;
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${cls}`}>
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </span>
+  );
+}
+
 type Delivery = {
   id: string;
   client_id: string;
@@ -49,11 +74,18 @@ type Delivery = {
   notes: string | null;
   price: number | null;
   price_missing: boolean;
+  vat_explicit?: boolean;
   contact_ordered_by: string | null;
   write_status: string;
   created_at: string;
   clients: { client_name: string } | null;
 };
+
+/** After-VAT value: only inflate when VAT was explicit; otherwise mirror the price. */
+function afterVat(d: Delivery): number {
+  const price = d.price ?? 0;
+  return d.vat_explicit ? Number((price * 1.18).toFixed(2)) : price;
+}
 
 function DeliveriesPage() {
   const qc = useQueryClient();
@@ -109,11 +141,20 @@ function DeliveriesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <h2 className="text-2xl font-bold">שליחויות</h2>
-        <div className="text-sm text-muted-foreground">היום: {today}</div>
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary">
+          <Package className="h-6 w-6 text-primary-foreground" />
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold leading-tight">שליחויות</h2>
+          <p className="text-sm text-muted-foreground leading-tight">
+            {rows ? `${rows.length} שליחויות` : "טוען..."} · היום {today}
+          </p>
+        </div>
       </div>
 
+      {/* Filters */}
       <Card className="p-4">
         <div className="grid gap-3 md:grid-cols-4">
           <div className="space-y-1">
@@ -159,72 +200,132 @@ function DeliveriesPage() {
         </div>
       </Card>
 
-      <Card>
-        {isLoading ? (
-          <div className="p-8 text-center text-muted-foreground">טוען...</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-right">תאריך</TableHead>
-                <TableHead className="text-right">לקוח</TableHead>
-                <TableHead className="text-right">תיאור</TableHead>
-                <TableHead className="text-right">הזמין</TableHead>
-                <TableHead className="text-right">הערות</TableHead>
-                <TableHead className="text-right">מחיר</TableHead>
-                <TableHead className="text-right">סה"כ ללא מע"מ</TableHead>
-                <TableHead className="text-right">סה"כ אחרי מע"מ</TableHead>
-                <TableHead className="text-right">סטטוס</TableHead>
-                <TableHead className="text-right">פעולות</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows?.map((d) => {
-                const price = d.price ?? 0;
-                const totalAfterVat = Number((price * 1.18).toFixed(2));
-                return (
-                  <TableRow key={d.id}>
-                    <TableCell className="text-xs whitespace-nowrap">{d.delivery_date}</TableCell>
+      {/* Loading */}
+      {isLoading ? (
+        <Card className="p-8 text-center text-muted-foreground">טוען...</Card>
+      ) : rows && rows.length === 0 ? (
+        <Card className="flex flex-col items-center gap-3 p-12 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
+            <Package className="h-7 w-7 text-muted-foreground" />
+          </div>
+          <p className="text-muted-foreground">אין שליחויות שתואמות את הסינון</p>
+        </Card>
+      ) : (
+        <>
+          {/* DESKTOP: table */}
+          <Card className="hidden overflow-hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40">
+                  <TableHead className="text-right">תאריך</TableHead>
+                  <TableHead className="text-right">לקוח</TableHead>
+                  <TableHead className="text-right">תיאור</TableHead>
+                  <TableHead className="text-right">הזמין</TableHead>
+                  <TableHead className="text-right">מחיר</TableHead>
+                  <TableHead className="text-right">אחרי מע"מ</TableHead>
+                  <TableHead className="text-right">סטטוס</TableHead>
+                  <TableHead className="text-right">פעולות</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows?.map((d) => (
+                  <TableRow key={d.id} className="hover:bg-muted/30">
+                    <TableCell className="whitespace-nowrap text-xs">{d.delivery_date}</TableCell>
                     <TableCell className="font-medium">{d.clients?.client_name ?? "—"}</TableCell>
                     <TableCell className="max-w-xs">
                       <div className="truncate">{d.description}</div>
                     </TableCell>
                     <TableCell className="text-xs">{d.contact_ordered_by ?? "—"}</TableCell>
-                    <TableCell className="text-xs max-w-xs truncate">{d.notes ?? "—"}</TableCell>
                     <TableCell className="whitespace-nowrap">
-                      {d.price_missing ? <Badge variant="destructive">חסר</Badge> : <span>{d.price} ₪</span>}
+                      {d.price_missing ? (
+                        <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                          חסר
+                        </span>
+                      ) : (
+                        <span className="font-medium">{d.price} ₪</span>
+                      )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {d.price_missing ? "—" : `${price} ₪`}
+                      {d.price_missing ? "—" : `${afterVat(d)} ₪`}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap">{d.price_missing ? "—" : `${totalAfterVat} ₪`}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{writeStatusLabels[d.write_status] ?? d.write_status}</Badge>
+                      <StatusBadge status={d.write_status} />
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button size="icon" variant="ghost" onClick={() => setEditing(d)}>
+                        <Button size="icon" variant="ghost" onClick={() => setEditing(d)} aria-label="עריכה">
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button size="icon" variant="ghost" onClick={() => setConfirmDel(d)}>
+                        <Button size="icon" variant="ghost" onClick={() => setConfirmDel(d)} aria-label="מחיקה">
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
                     </TableCell>
                   </TableRow>
-                );
-              })}
-              {rows?.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                    אין שליחויות
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        )}
-      </Card>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+
+          {/* MOBILE: cards */}
+          <div className="space-y-3 md:hidden">
+            {rows?.map((d) => (
+              <Card key={d.id} className="p-4">
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{d.clients?.client_name ?? "—"}</p>
+                    <p className="text-xs text-muted-foreground">{d.delivery_date}</p>
+                  </div>
+                  <StatusBadge status={d.write_status} />
+                </div>
+
+                <p className="mb-3 text-sm">{d.description}</p>
+
+                <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                  {d.contact_ordered_by && (
+                    <span className="text-muted-foreground">
+                      הזמין: <span className="text-foreground">{d.contact_ordered_by}</span>
+                    </span>
+                  )}
+                  <span className="text-muted-foreground">
+                    מחיר:{" "}
+                    {d.price_missing ? (
+                      <span className="font-medium text-red-700">חסר</span>
+                    ) : (
+                      <span className="font-medium text-foreground">{d.price} ₪</span>
+                    )}
+                  </span>
+                  {!d.price_missing && (
+                    <span className="text-muted-foreground">
+                      אחרי מע"מ: <span className="text-foreground">{afterVat(d)} ₪</span>
+                    </span>
+                  )}
+                </div>
+
+                {d.notes && (
+                  <p className="mb-3 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{d.notes}</p>
+                )}
+
+                <div className="flex gap-2 border-t pt-3">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => setEditing(d)}>
+                    <Pencil className="ml-1.5 h-4 w-4" />
+                    עריכה
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 text-destructive hover:text-destructive"
+                    onClick={() => setConfirmDel(d)}
+                  >
+                    <Trash2 className="ml-1.5 h-4 w-4" />
+                    מחיקה
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
 
       {editing && (
         <EditDialog
