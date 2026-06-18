@@ -1,0 +1,1 @@
+ALTER TABLE public.deliveries ADD COLUMN IF NOT EXISTS written_at TIMESTAMPTZ; ALTER TABLE public.deliveries ADD COLUMN IF NOT EXISTS write_error TEXT;
