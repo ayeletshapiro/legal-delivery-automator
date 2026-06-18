@@ -113,6 +113,7 @@ function MessagesPage() {
                 <TableHead className="text-right">סוג</TableHead>
                 <TableHead className="text-right">תוכן</TableHead>
                 <TableHead className="text-right">סטטוס</TableHead>
+                <TableHead className="text-right">פעולה</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -123,10 +124,22 @@ function MessagesPage() {
                   <TableCell>{typeLabels[m.message_type]}</TableCell>
                   <TableCell className="max-w-md truncate">{m.transcribed_text || m.raw_text || (m.media_received ? "(מדיה)" : "—")}</TableCell>
                   <TableCell><Badge variant="secondary">{statusLabels[m.status] ?? m.status}</Badge></TableCell>
+                  <TableCell>
+                    {(m.message_type === "text") && (m.raw_text || m.transcribed_text) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={processMut.isPending}
+                        onClick={() => processMut.mutate(m.id)}
+                      >
+                        {m.status === "done" || m.status === "missing_client" ? "עבד מחדש" : "עבד"}
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
               {data?.length === 0 && (
-                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">אין הודעות</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">אין הודעות</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
