@@ -216,7 +216,7 @@ function DeliveriesPage() {
               {rows?.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                    אין משלוחים
+                    אין שליחויות
                   </TableCell>
                 </TableRow>
               )}
