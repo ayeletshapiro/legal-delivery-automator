@@ -216,16 +216,31 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
 
             if (profile?.id) {
               try {
+                const businessPhone = stripWhatsAppPrefix(params["To"] ?? "");
                 const { tryHandleClarificationReply, processIncomingMessage } = await import("@/lib/processing.server");
-                const handled = await tryHandleClarificationReply(supabaseAdmin, profile.id, senderPhone, transcript);
-                if (handled) {
+                const outcome = await tryHandleClarificationReply(
+                  supabaseAdmin, profile.id, senderPhone, transcript, businessPhone, inserted.id,
+                );
+                if (outcome.kind === "resolved") {
                   await supabaseAdmin.from("incoming_messages").update({
                     status: "done",
-                    error_detail: "תשובת הבהרה לבירור לקוח (קולי)",
+                    error_detail: "תשובת הבהרה — שויך לקוח ונכתב לגיליון (קולי)",
+                    processed_at: new Date().toISOString(),
+                  }).eq("id", inserted.id);
+                } else if (outcome.kind === "reprompted") {
+                  await supabaseAdmin.from("incoming_messages").update({
+                    status: "awaiting_clarification",
+                    error_detail: "ממתין להבהרה (קולי)",
+                    processed_at: new Date().toISOString(),
+                  }).eq("id", inserted.id);
+                } else if (outcome.kind === "cancelled") {
+                  await supabaseAdmin.from("incoming_messages").update({
+                    status: "cancelled",
+                    error_detail: "המשתמש ביטל את הבירור (קולי)",
                     processed_at: new Date().toISOString(),
                   }).eq("id", inserted.id);
                 } else {
-                  await processIncomingMessage(supabaseAdmin, inserted.id);
+                  await processIncomingMessage(supabaseAdmin, inserted.id, businessPhone);
                 }
               } catch (e) {
                 console.error("[twilio-webhook] audio auto-process error", e);
