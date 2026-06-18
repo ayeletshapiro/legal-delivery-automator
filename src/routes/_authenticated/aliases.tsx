@@ -152,8 +152,8 @@ function AliasesPage() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40">
-                  <TableHead className="text-right">כינוי</TableHead>
                   <TableHead className="text-right">לקוח</TableHead>
+                  <TableHead className="text-right">כינוי</TableHead>
                   <TableHead className="text-right">פעולות</TableHead>
                 </TableRow>
               </TableHeader>
@@ -163,16 +163,18 @@ function AliasesPage() {
                   return (
                     <TableRow key={a.id} className="hover:bg-muted/30">
                       <TableCell>
-                        <span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-sm font-medium">
-                          <Tags className="h-3.5 w-3.5 text-muted-foreground" />
-                          {a.alias}
-                        </span>
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={clientName} />
+                          <span className="font-medium">{clientName}</span>
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2.5">
                           <ArrowLeft className="h-4 w-4 text-muted-foreground" />
-                          <Avatar name={clientName} />
-                          <span className="font-medium">{clientName}</span>
+                          <span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-sm font-medium">
+                            <Tags className="h-3.5 w-3.5 text-muted-foreground" />
+                            {a.alias}
+                          </span>
                         </div>
                       </TableCell>
                       <TableCell>
