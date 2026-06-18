@@ -549,6 +549,7 @@ async function callLovableAI(rawText: string): Promise<ParsedDelivery> {
     delivery_date: parsed.delivery_date ?? null,
     contact_ordered_by: parsed.contact_ordered_by ?? null,
     notes: parsed.notes ?? null,
+    vat_explicit: parsed.vat_explicit === true,
   };
 }
 
