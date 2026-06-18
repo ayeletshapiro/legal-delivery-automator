@@ -855,6 +855,7 @@ export async function processIncomingMessage(
         notes: parsed.notes,
         price: parsed.price,
         price_missing: parsed.price == null,
+        vat_explicit: parsed.vat_explicit,
         contact_ordered_by: parsed.contact_ordered_by,
         write_status: "pending",
       }).select("id").single();
