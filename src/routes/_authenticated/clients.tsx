@@ -3,7 +3,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { listClients, createClient, updateClient, archiveClient, importClientsWithAliases } from "@/lib/clients.functions";
+import {
+  listClients,
+  createClient,
+  updateClient,
+  archiveClient,
+  importClientsWithAliases,
+} from "@/lib/clients.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,23 +35,37 @@ function ClientsPage() {
 
   const createMut = useMutation({
     mutationFn: (vars: { client_name: string }) => create({ data: vars }),
-    onSuccess: () => { toast.success("לקוח נוסף"); qc.invalidateQueries({ queryKey: ["clients"] }); setOpen(false); setName(""); },
+    onSuccess: () => {
+      toast.success("לקוח נוסף");
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      setOpen(false);
+      setName("");
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   const updateMut = useMutation({
     mutationFn: (vars: { id: string; client_name: string }) => update({ data: vars }),
-    onSuccess: () => { toast.success("עודכן"); qc.invalidateQueries({ queryKey: ["clients"] }); setEditing(null); },
+    onSuccess: () => {
+      toast.success("עודכן");
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      setEditing(null);
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   const archiveMut = useMutation({
     mutationFn: (vars: { id: string; archive: boolean }) => archive({ data: vars }),
-    onSuccess: () => { toast.success("הסטטוס עודכן"); qc.invalidateQueries({ queryKey: ["clients"] }); },
+    onSuccess: () => {
+      toast.success("הסטטוס עודכן");
+      qc.invalidateQueries({ queryKey: ["clients"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   const importMut = useMutation({
     mutationFn: (rows: Array<{ client_name: string; alias?: string | null }>) => importFn({ data: { rows } }),
     onSuccess: (r) => {
-      toast.success(`יובאו: ${r.createdClients} לקוחות חדשים, ${r.createdAliases} כינויים${r.skippedAliases ? `, ${r.skippedAliases} דולגו (קיים)` : ""}`);
+      toast.success(
+        `יובאו: ${r.createdClients} לקוחות חדשים, ${r.createdAliases} כינויים${r.skippedAliases ? `, ${r.skippedAliases} דולגו (קיים)` : ""}`,
+      );
       qc.invalidateQueries({ queryKey: ["clients"] });
       qc.invalidateQueries({ queryKey: ["aliases"] });
     },
@@ -67,8 +87,8 @@ function ClientsPage() {
       const rows: Array<{ client_name: string; alias?: string | null }> = [];
       let lastName = "";
       // Detect header row
-      const startIdx = aoa.length && typeof aoa[0][0] === "string" &&
-        /לקוח|client|name/i.test(String(aoa[0][0])) ? 1 : 0;
+      const startIdx =
+        aoa.length && typeof aoa[0][0] === "string" && /לקוח|client|name/i.test(String(aoa[0][0])) ? 1 : 0;
       for (let i = startIdx; i < aoa.length; i++) {
         const r = aoa[i];
         const n = String(r[0] ?? "").trim();
@@ -77,7 +97,10 @@ function ClientsPage() {
         if (!lastName) continue;
         rows.push({ client_name: lastName, alias: a || null });
       }
-      if (!rows.length) { toast.error("לא נמצאו שורות בקובץ"); return; }
+      if (!rows.length) {
+        toast.error("לא נמצאו שורות בקובץ");
+        return;
+      }
       importMut.mutate(rows);
     } catch (e: any) {
       toast.error("שגיאה בקריאת הקובץ: " + e.message);
@@ -96,7 +119,10 @@ function ClientsPage() {
             type="file"
             accept=".xlsx,.xls,.csv"
             className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleFile(f);
+            }}
           />
           <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={importMut.isPending}>
             {importMut.isPending ? "מייבא..." : "ייבוא מאקסל"}
@@ -106,12 +132,22 @@ function ClientsPage() {
               <Button>הוסף לקוח</Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogHeader><DialogTitle>לקוח חדש</DialogTitle></DialogHeader>
+              <DialogHeader>
+                <DialogTitle>לקוח חדש</DialogTitle>
+              </DialogHeader>
               <div className="space-y-4">
-                <div className="space-y-2"><Label>שם לקוח</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
+                <div className="space-y-2">
+                  <Label>שם לקוח</Label>
+                  <Input value={name} onChange={(e) => setName(e.target.value)} />
+                </div>
               </div>
               <DialogFooter>
-                <Button onClick={() => createMut.mutate({ client_name: name })} disabled={!name.trim() || createMut.isPending}>שמור</Button>
+                <Button
+                  onClick={() => createMut.mutate({ client_name: name })}
+                  disabled={!name.trim() || createMut.isPending}
+                >
+                  שמור
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -119,7 +155,8 @@ function ClientsPage() {
       </div>
 
       <p className="text-sm text-muted-foreground">
-        ייבוא מאקסל: עמודה A — שם לקוח, עמודה B — כינוי. לקוח עם כמה כינויים — מלאי כל כינוי בשורה נפרדת, עמודה A יכולה להישאר ריקה בשורות הנוספות.
+        ייבוא מאקסל: עמודה A — שם לקוח, עמודה B — כינוי. לקוח עם כמה כינויים — מלא כל כינוי בשורה נפרדת, עמודה A יכולה
+        להישאר ריקה בשורות הנוספות.
       </p>
 
       <Card>
@@ -139,15 +176,29 @@ function ClientsPage() {
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">
                     {c.client_name}
-                    {c.is_miscellaneous && <Badge variant="secondary" className="mr-2">ברירת מחדל</Badge>}
+                    {c.is_miscellaneous && (
+                      <Badge variant="secondary" className="mr-2">
+                        ברירת מחדל
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>
                     {c.is_archived ? <Badge variant="outline">בארכיון</Badge> : <Badge>פעיל</Badge>}
                   </TableCell>
                   <TableCell className="space-x-2 space-x-reverse">
-                    <Button variant="outline" size="sm" onClick={() => setEditing({ id: c.id, client_name: c.client_name })}>ערוך</Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditing({ id: c.id, client_name: c.client_name })}
+                    >
+                      ערוך
+                    </Button>
                     {!c.is_miscellaneous && (
-                      <Button variant="ghost" size="sm" onClick={() => archiveMut.mutate({ id: c.id, archive: !c.is_archived })}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => archiveMut.mutate({ id: c.id, archive: !c.is_archived })}
+                      >
                         {c.is_archived ? "שחזר" : "ארכב"}
                       </Button>
                     )}
@@ -161,14 +212,27 @@ function ClientsPage() {
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>עריכת לקוח</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>עריכת לקוח</DialogTitle>
+          </DialogHeader>
           {editing && (
             <div className="space-y-4">
-              <div className="space-y-2"><Label>שם</Label><Input value={editing.client_name} onChange={(e) => setEditing({ ...editing, client_name: e.target.value })} /></div>
+              <div className="space-y-2">
+                <Label>שם</Label>
+                <Input
+                  value={editing.client_name}
+                  onChange={(e) => setEditing({ ...editing, client_name: e.target.value })}
+                />
+              </div>
             </div>
           )}
           <DialogFooter>
-            <Button onClick={() => editing && updateMut.mutate({ id: editing.id, client_name: editing.client_name })} disabled={updateMut.isPending}>שמור</Button>
+            <Button
+              onClick={() => editing && updateMut.mutate({ id: editing.id, client_name: editing.client_name })}
+              disabled={updateMut.isPending}
+            >
+              שמור
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
