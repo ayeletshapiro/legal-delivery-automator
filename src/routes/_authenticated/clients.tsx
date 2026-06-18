@@ -58,7 +58,7 @@ function ClientsPage() {
             <DialogHeader><DialogTitle>לקוח חדש</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2"><Label>שם לקוח</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-              <div className="space-y-2"><Label>Google Sheet ID (אופציונלי)</Label><Input value={sheet} onChange={(e) => setSheet(e.target.value)} dir="ltr" /></div>
+              <div className="space-y-2"><Label>Google Sheet ID (אופציונלי)</Label><Input value={sheet} onChange={(e) => setSheet(e.target.value)} dir="ltr" placeholder="ייווצר אוטומטית בהודעה הראשונה" /></div>
             </div>
             <DialogFooter>
               <Button onClick={() => createMut.mutate({ client_name: name, google_sheet_id: sheet || null })} disabled={!name.trim() || createMut.isPending}>שמור</Button>
@@ -87,7 +87,7 @@ function ClientsPage() {
                     {c.client_name}
                     {c.is_miscellaneous && <Badge variant="secondary" className="mr-2">ברירת מחדל</Badge>}
                   </TableCell>
-                  <TableCell dir="ltr" className="text-xs text-muted-foreground">{c.google_sheet_id || "—"}</TableCell>
+                  <TableCell dir="ltr" className="text-xs text-muted-foreground">{c.google_sheet_id || <span className="italic">ייווצר אוטומטית</span>}</TableCell>
                   <TableCell>
                     {c.is_archived ? <Badge variant="outline">בארכיון</Badge> : <Badge>פעיל</Badge>}
                   </TableCell>
@@ -112,7 +112,7 @@ function ClientsPage() {
           {editing && (
             <div className="space-y-4">
               <div className="space-y-2"><Label>שם</Label><Input value={editing.client_name} onChange={(e) => setEditing({ ...editing, client_name: e.target.value })} /></div>
-              <div className="space-y-2"><Label>Google Sheet ID</Label><Input value={editing.google_sheet_id ?? ""} onChange={(e) => setEditing({ ...editing, google_sheet_id: e.target.value })} dir="ltr" /></div>
+              <div className="space-y-2"><Label>Google Sheet ID</Label><Input value={editing.google_sheet_id ?? ""} onChange={(e) => setEditing({ ...editing, google_sheet_id: e.target.value })} dir="ltr" placeholder="ייווצר אוטומטית בהודעה הראשונה" /></div>
             </div>
           )}
           <DialogFooter>

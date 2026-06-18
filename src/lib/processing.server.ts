@@ -7,7 +7,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { appendDeliveryToSheet } from "./sheets.server";
+import { appendDeliveryToSheet, createSheetForClient } from "./sheets.server";
 
 type DB = SupabaseClient<Database>;
 
@@ -206,13 +206,24 @@ export async function processIncomingMessage(
     if (matched && parsed.price != null) {
       const { data: clientRow } = await supabase
         .from("clients")
-        .select("google_sheet_id")
+        .select("google_sheet_id, client_name")
         .eq("id", clientId)
         .maybeSingle();
-      const sheetId = clientRow?.google_sheet_id?.trim();
-      if (!sheetId) {
-        writeStatus = "ללא גיליון";
-      } else {
+      let sheetId = clientRow?.google_sheet_id?.trim() || null;
+
+      // Auto-create a sheet for this client on first delivery
+      if (!sheetId && clientRow?.client_name) {
+        try {
+          sheetId = await createSheetForClient(clientRow.client_name);
+          await supabase.from("clients").update({ google_sheet_id: sheetId }).eq("id", clientId);
+        } catch (createErr: unknown) {
+          const msg = createErr instanceof Error ? createErr.message : "שגיאה לא ידועה ביצירת גיליון";
+          writeStatus = "שגיאה";
+          writeError = msg;
+        }
+      }
+
+      if (writeStatus !== "שגיאה" && sheetId) {
         const result = await appendDeliveryToSheet(sheetId, {
           delivery_date: deliveryDate,
           description: parsed.description,
@@ -226,6 +237,8 @@ export async function processIncomingMessage(
           writeStatus = "שגיאה";
           writeError = result.error ?? "שגיאה לא ידועה";
         }
+      } else if (writeStatus !== "שגיאה") {
+        writeStatus = "ללא גיליון";
       }
       await supabase.from("deliveries").update({
         write_status: writeStatus,

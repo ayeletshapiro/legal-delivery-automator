@@ -149,27 +149,39 @@ function DeliveriesPage() {
                 <TableHead className="text-right">תאריך</TableHead>
                 <TableHead className="text-right">לקוח</TableHead>
                 <TableHead className="text-right">תיאור</TableHead>
-                <TableHead className="text-right">מחיר</TableHead>
                 <TableHead className="text-right">הזמין</TableHead>
+                <TableHead className="text-right">הערות</TableHead>
+                <TableHead className="text-right">מחיר</TableHead>
+                <TableHead className="text-right">סה"כ ללא מע"מ</TableHead>
+                <TableHead className="text-right">סה"כ אחרי מע"מ</TableHead>
                 <TableHead className="text-right">סטטוס</TableHead>
                 <TableHead className="text-right">פעולות</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows?.map((d) => (
+              {rows?.map((d) => {
+                const price = d.price ?? 0;
+                const totalAfterVat = Number((price * 1.18).toFixed(2));
+                return (
                 <TableRow key={d.id}>
                   <TableCell className="text-xs whitespace-nowrap">{d.delivery_date}</TableCell>
                   <TableCell className="font-medium">{d.clients?.client_name ?? "—"}</TableCell>
-                  <TableCell className="max-w-md">
+                  <TableCell className="max-w-xs">
                     <div className="truncate">{d.description}</div>
-                    {d.notes && <div className="text-xs text-muted-foreground truncate">{d.notes}</div>}
                   </TableCell>
+                  <TableCell className="text-xs">{d.contact_ordered_by ?? "—"}</TableCell>
+                  <TableCell className="text-xs max-w-xs truncate">{d.notes ?? "—"}</TableCell>
                   <TableCell className="whitespace-nowrap">
                     {d.price_missing
                       ? <Badge variant="destructive">חסר</Badge>
                       : <span>{d.price} ₪</span>}
                   </TableCell>
-                  <TableCell className="text-xs">{d.contact_ordered_by ?? "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {d.price_missing ? "—" : `${price} ₪`}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {d.price_missing ? "—" : `${totalAfterVat} ₪`}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{writeStatusLabels[d.write_status] ?? d.write_status}</Badge>
                   </TableCell>
@@ -184,12 +196,14 @@ function DeliveriesPage() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
               {rows?.length === 0 && (
-                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">אין משלוחים</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">אין משלוחים</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
+
         )}
       </Card>
 
