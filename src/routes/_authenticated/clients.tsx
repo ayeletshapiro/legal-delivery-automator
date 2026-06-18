@@ -180,7 +180,7 @@ function ClientsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data?.map((c) => (
+              {filtered.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">
                     {c.client_name}
