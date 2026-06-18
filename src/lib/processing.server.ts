@@ -115,15 +115,18 @@ function containsKnownClient(
   clients: Array<{ id: string; client_name: string; is_miscellaneous: boolean }>,
   aliases: Array<{ client_id: string; alias: string }>,
 ): string | null {
-  const norm = ` ${normalize(text)} `;
+  const tokens = tokenize(text);
+  const joined = ` ${tokens.join(" ")} `;
+  const hasPhrase = (phrase: string) => {
+    const p = tokenize(phrase).join(" ");
+    return p.length > 0 && joined.includes(` ${p} `);
+  };
   for (const a of aliases) {
-    const n = normalize(a.alias);
-    if (n && norm.includes(` ${n} `)) return a.client_id;
+    if (hasPhrase(a.alias)) return a.client_id;
   }
   for (const c of clients) {
     if (c.is_miscellaneous) continue;
-    const n = normalize(c.client_name);
-    if (n && norm.includes(` ${n} `)) return c.id;
+    if (hasPhrase(c.client_name)) return c.id;
   }
   return null;
 }
