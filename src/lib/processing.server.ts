@@ -669,9 +669,9 @@ export async function processIncomingMessage(
       .limit(1)
       .maybeSingle();
     if (existingErr) throw existingErr;
+    let delivery: { id: string } | null = null;
+
     if (existingDelivery) {
-      // On reprocess: if we now resolved a different/real client, re-assign the delivery
-      // to that client so it isn't stuck on the previously-set "מזדמנים".
       const clientChanged = existingDelivery.client_id !== clientId;
       if (clientChanged) {
         const { error: reassignErr } = await supabase
@@ -688,44 +688,42 @@ export async function processIncomingMessage(
         existingDelivery.write_status = "pending";
       }
 
-      if (matched && existingDelivery.write_status !== "נכתב") {
-        await writeDeliveryToClientSheet(supabase, {
-          deliveryId: existingDelivery.id,
-          messageId: existingDelivery.message_id,
-          userId: existingDelivery.user_id,
-          clientId: existingDelivery.client_id,
-          delivery_date: existingDelivery.delivery_date,
-          description: existingDelivery.description,
-          contact_ordered_by: existingDelivery.contact_ordered_by,
-          notes: existingDelivery.notes,
-          price: existingDelivery.price,
-        });
+      if (matched) {
+        if (existingDelivery.write_status !== "נכתב") {
+          await writeDeliveryToClientSheet(supabase, {
+            deliveryId: existingDelivery.id,
+            messageId: existingDelivery.message_id,
+            userId: existingDelivery.user_id,
+            clientId: existingDelivery.client_id,
+            delivery_date: existingDelivery.delivery_date,
+            description: existingDelivery.description,
+            contact_ordered_by: existingDelivery.contact_ordered_by,
+            notes: existingDelivery.notes,
+            price: existingDelivery.price,
+          });
+        }
+        await supabase.from("incoming_messages").update({
+          status: "done", error_detail: null, processed_at: new Date().toISOString(),
+        }).eq("id", messageId);
+        return { ok: true, status: "done", deliveryId: existingDelivery.id };
       }
-      await supabase.from("incoming_messages").update({
-        status: matched ? "done" : "missing_client",
-        error_detail: matched ? null : `שובץ ל"מזדמנים" — לא זוהה לקוח מתוך: ${parsed.client_name ?? "(ריק)"}`,
-        processed_at: new Date().toISOString(),
-      }).eq("id", messageId);
-      return { ok: true, status: matched ? "done" : "missing_client", deliveryId: existingDelivery.id };
-    }
-
-    const { data: delivery, error: delErr } = await supabase.from("deliveries").insert({
-      message_id: messageId,
-      client_id: clientId,
-      user_id: msg.user_id,
-      delivery_date: deliveryDate,
-      description: parsed.description,
-      notes: parsed.notes,
-      price: parsed.price,
-      price_missing: parsed.price == null,
-      contact_ordered_by: parsed.contact_ordered_by,
-      write_status: matched ? "pending" : "awaiting_clarification",
-    }).select("id").single();
-    if (delErr) throw delErr;
-
-    if (matched) {
+      delivery = { id: existingDelivery.id };
+    } else if (matched) {
+      const { data: newDelivery, error: delErr } = await supabase.from("deliveries").insert({
+        message_id: messageId,
+        client_id: clientId,
+        user_id: msg.user_id,
+        delivery_date: deliveryDate,
+        description: parsed.description,
+        notes: parsed.notes,
+        price: parsed.price,
+        price_missing: parsed.price == null,
+        contact_ordered_by: parsed.contact_ordered_by,
+        write_status: "pending",
+      }).select("id").single();
+      if (delErr) throw delErr;
       await writeDeliveryToClientSheet(supabase, {
-        deliveryId: delivery.id,
+        deliveryId: newDelivery.id,
         messageId,
         userId: msg.user_id,
         clientId,
@@ -735,12 +733,27 @@ export async function processIncomingMessage(
         notes: parsed.notes,
         price: parsed.price,
       });
-
       await supabase.from("incoming_messages").update({
         status: "done", error_detail: null, processed_at: new Date().toISOString(),
       }).eq("id", messageId);
-      return { ok: true, status: "done", deliveryId: delivery.id };
+      return { ok: true, status: "done", deliveryId: newDelivery.id };
+    } else {
+      const { data: newDelivery, error: delErr } = await supabase.from("deliveries").insert({
+        message_id: messageId,
+        client_id: clientId,
+        user_id: msg.user_id,
+        delivery_date: deliveryDate,
+        description: parsed.description,
+        notes: parsed.notes,
+        price: parsed.price,
+        price_missing: parsed.price == null,
+        contact_ordered_by: parsed.contact_ordered_by,
+        write_status: "awaiting_clarification",
+      }).select("id").single();
+      if (delErr) throw delErr;
+      delivery = { id: newDelivery.id };
     }
+
 
     // Not matched → start (or continue) a clarification flow via WhatsApp.
     await expireStaleClarifications(supabase, msg.user_id);
