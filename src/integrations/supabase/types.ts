@@ -223,6 +223,54 @@ export type Database = {
         }
         Relationships: []
       }
+      pending_clarifications: {
+        Row: {
+          created_at: string
+          delivery_id: string
+          id: string
+          message_id: string
+          raw_text: string
+          resolution: string | null
+          resolved_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          delivery_id: string
+          id?: string
+          message_id: string
+          raw_text: string
+          resolution?: string | null
+          resolved_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          delivery_id?: string
+          id?: string
+          message_id?: string
+          raw_text?: string
+          resolution?: string | null
+          resolved_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pending_clarifications_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pending_clarifications_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "incoming_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       processing_errors: {
         Row: {
           created_at: string
