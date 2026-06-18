@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS clients_one_misc_per_user ON public.clients(user_id) WHERE is_miscellaneous = true;
