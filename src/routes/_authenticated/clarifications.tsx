@@ -5,13 +5,39 @@ import { listOpenClarifications, cancelClarification } from "@/lib/clarification
 import { processMessage } from "@/lib/processing.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
+import { HelpCircle, RotateCcw, X, ArrowLeft, CheckCircle2, Send, Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/clarifications")({
   component: ClarificationsPage,
 });
+
+type Clarification = {
+  id: string;
+  message_id: string;
+  raw_text: string | null;
+  created_at: string;
+  reply_sent_at: string | null;
+  incoming_messages: { sender_phone: string | null } | null;
+};
+
+/** Status badge: "new" vs "request sent". */
+function StatusBadge({ replySentAt }: { replySentAt: string | null }) {
+  if (replySentAt) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700">
+        <Send className="h-3.5 w-3.5" />
+        בקשת בירור נשלחה
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+      חדש
+    </span>
+  );
+}
 
 function ClarificationsPage() {
   const qc = useQueryClient();
@@ -21,7 +47,7 @@ function ClarificationsPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["open-clarifications"],
-    queryFn: () => listFn(),
+    queryFn: () => listFn() as Promise<Clarification[]>,
   });
 
   const cancelMut = useMutation({
@@ -45,73 +71,145 @@ function ClarificationsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const count = data?.length ?? 0;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">בירורי לקוח פתוחים</h2>
-        <Badge variant="secondary">{data?.length ?? 0} פתוחים</Badge>
+      {/* Header — amber accent (this is the "pending" screen) */}
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500">
+          <HelpCircle className="h-6 w-6 text-white" />
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold leading-tight">בירורי לקוח פתוחים</h2>
+          <p className="text-sm text-muted-foreground leading-tight">
+            {data ? `${count} בירורים ממתינים לטיפול` : "טוען..."}
+          </p>
+        </div>
       </div>
-      <p className="text-sm text-muted-foreground">
-        הודעות שהמערכת לא הצליחה לשייך אוטומטית. אפשר לבטל כדי לסגור, או להריץ את העיבוד מחדש.
-      </p>
 
-      <Card>
-        {isLoading ? (
-          <div className="p-8 text-center text-muted-foreground">טוען...</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-right">תאריך</TableHead>
-                <TableHead className="text-right">טלפון שולח</TableHead>
-                <TableHead className="text-right">הודעה מקורית</TableHead>
-                <TableHead className="text-right">סטטוס</TableHead>
-                <TableHead className="text-right">פעולות</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data?.map((c: any) => (
-                <TableRow key={c.id}>
-                  <TableCell className="text-xs">{new Date(c.created_at).toLocaleString("he-IL")}</TableCell>
-                  <TableCell dir="ltr" className="text-xs">{c.incoming_messages?.sender_phone ?? "—"}</TableCell>
-                  <TableCell className="max-w-md truncate">{c.raw_text}</TableCell>
-                  <TableCell>
-                    {c.reply_sent_at
-                      ? <Badge variant="secondary">בקשת בירור נשלחה</Badge>
-                      : <Badge variant="outline">חדש</Badge>}
-                  </TableCell>
-                  <TableCell className="space-x-2 space-x-reverse">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={reprocessMut.isPending}
-                      onClick={() => reprocessMut.mutate(c.message_id)}
-                    >
-                      עבד מחדש
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={cancelMut.isPending}
-                      onClick={() => cancelMut.mutate(c.id)}
-                    >
-                      בטל בירור
-                    </Button>
-                    <Link to="/messages" className="text-xs text-primary underline">לעמוד ההודעות</Link>
-                  </TableCell>
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        הודעות שהמערכת לא הצליחה לשייך אוטומטית ללקוח. אפשר לבטל כדי לסגור, או להריץ את העיבוד מחדש לאחר תיקון.
+      </div>
+
+      {/* Loading / empty / data */}
+      {isLoading ? (
+        <Card className="p-8 text-center text-muted-foreground">טוען...</Card>
+      ) : count === 0 ? (
+        <Card className="flex flex-col items-center gap-3 p-12 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50">
+            <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+          </div>
+          <p className="font-medium">הכל מסודר!</p>
+          <p className="text-sm text-muted-foreground">
+            <Sparkles className="ml-1 inline h-4 w-4" />
+            אין בירורים פתוחים כרגע
+          </p>
+        </Card>
+      ) : (
+        <>
+          {/* DESKTOP: table */}
+          <Card className="hidden overflow-hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40">
+                  <TableHead className="text-right">תאריך</TableHead>
+                  <TableHead className="text-right">טלפון שולח</TableHead>
+                  <TableHead className="text-right">הודעה מקורית</TableHead>
+                  <TableHead className="text-right">סטטוס</TableHead>
+                  <TableHead className="text-right">פעולות</TableHead>
                 </TableRow>
-              ))}
-              {data?.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                    אין בירורים פתוחים 🎉
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        )}
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {data?.map((c) => (
+                  <TableRow key={c.id} className="hover:bg-muted/30">
+                    <TableCell className="whitespace-nowrap text-xs">
+                      {new Date(c.created_at).toLocaleString("he-IL")}
+                    </TableCell>
+                    <TableCell dir="ltr" className="text-xs">
+                      {c.incoming_messages?.sender_phone ?? "—"}
+                    </TableCell>
+                    <TableCell className="max-w-md">
+                      <div className="truncate rounded-lg bg-muted/50 px-3 py-1.5">{c.raw_text}</div>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge replySentAt={c.reply_sent_at} />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={reprocessMut.isPending}
+                          onClick={() => reprocessMut.mutate(c.message_id)}
+                        >
+                          <RotateCcw className="ml-1.5 h-4 w-4" />
+                          עבד מחדש
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive hover:text-destructive"
+                          disabled={cancelMut.isPending}
+                          onClick={() => cancelMut.mutate(c.id)}
+                        >
+                          <X className="ml-1.5 h-4 w-4" />
+                          בטל
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+
+          {/* MOBILE: cards */}
+          <div className="space-y-3 md:hidden">
+            {data?.map((c) => (
+              <Card key={c.id} className="p-4">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span dir="ltr" className="text-sm font-medium">
+                    {c.incoming_messages?.sender_phone ?? "—"}
+                  </span>
+                  <StatusBadge replySentAt={c.reply_sent_at} />
+                </div>
+
+                <div className="mb-2 rounded-lg bg-muted/50 px-3 py-2 text-sm">{c.raw_text}</div>
+                <p className="mb-3 text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString("he-IL")}</p>
+
+                <div className="flex gap-2 border-t pt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1"
+                    disabled={reprocessMut.isPending}
+                    onClick={() => reprocessMut.mutate(c.message_id)}
+                  >
+                    <RotateCcw className="ml-1.5 h-4 w-4" />
+                    עבד מחדש
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 text-destructive hover:text-destructive"
+                    disabled={cancelMut.isPending}
+                    onClick={() => cancelMut.mutate(c.id)}
+                  >
+                    <X className="ml-1.5 h-4 w-4" />
+                    בטל
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <Link to="/messages" className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">
+            <ArrowLeft className="h-4 w-4" />
+            לעמוד ההודעות המלא
+          </Link>
+        </>
+      )}
     </div>
   );
 }
