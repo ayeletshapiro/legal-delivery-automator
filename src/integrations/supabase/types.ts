@@ -118,6 +118,7 @@ export type Database = {
           row_number: number | null
           sheet_name: string | null
           user_id: string
+          vat_explicit: boolean
           write_error: string | null
           write_status: string
           written_at: string | null
@@ -137,6 +138,7 @@ export type Database = {
           row_number?: number | null
           sheet_name?: string | null
           user_id: string
+          vat_explicit?: boolean
           write_error?: string | null
           write_status?: string
           written_at?: string | null
@@ -156,6 +158,7 @@ export type Database = {
           row_number?: number | null
           sheet_name?: string | null
           user_id?: string
+          vat_explicit?: boolean
           write_error?: string | null
           write_status?: string
           written_at?: string | null

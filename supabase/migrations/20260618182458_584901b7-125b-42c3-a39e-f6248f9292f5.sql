@@ -1,0 +1,1 @@
+ALTER TABLE public.deliveries ADD COLUMN IF NOT EXISTS vat_explicit boolean NOT NULL DEFAULT false;
