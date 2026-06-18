@@ -1,12 +1,13 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { Truck } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -56,58 +57,112 @@ function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">ניהול שליחויות</CardTitle>
-          <CardDescription>התחברות לממשק הניהול</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="signin">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="signin">התחברות</TabsTrigger>
-              <TabsTrigger value="signup">הרשמה</TabsTrigger>
-            </TabsList>
-            <TabsContent value="signin">
-              <form onSubmit={handleSignIn} className="space-y-4 mt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">אימייל</Label>
-                  <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} dir="ltr" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">סיסמה</Label>
-                  <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} dir="ltr" />
-                </div>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "מתחבר..." : "התחבר"}
-                </Button>
-                <button type="button" onClick={handleResetRequest} className="text-sm text-muted-foreground hover:underline w-full text-center">
-                  שכחתי סיסמה
-                </button>
-              </form>
-            </TabsContent>
-            <TabsContent value="signup">
-              <form onSubmit={handleSignUp} className="space-y-4 mt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">שם מלא</Label>
-                  <Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email2">אימייל</Label>
-                  <Input id="email2" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} dir="ltr" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password2">סיסמה</Label>
-                  <Input id="password2" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} dir="ltr" />
-                </div>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "נרשם..." : "הרשם"}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+    <div dir="rtl" className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
+      <div className="w-full max-w-md">
+        {/* Brand header */}
+        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary">
+            <Truck className="h-8 w-8 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">שליחויות אביעד</h1>
+            <p className="text-sm text-muted-foreground">ניהול שליחויות משפטיות</p>
+          </div>
+        </div>
+
+        <Card>
+          <CardContent className="pt-6">
+            <Tabs defaultValue="signin">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="signin">התחברות</TabsTrigger>
+                <TabsTrigger value="signup">הרשמה</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="signin">
+                <form onSubmit={handleSignIn} className="mt-4 space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="block text-right">
+                      אימייל
+                    </Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      dir="ltr"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password" className="block text-right">
+                      סיסמה
+                    </Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      dir="ltr"
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? "מתחבר..." : "התחבר"}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={handleResetRequest}
+                    className="w-full text-center text-sm text-muted-foreground hover:underline"
+                  >
+                    שכחתי סיסמה
+                  </button>
+                </form>
+              </TabsContent>
+
+              <TabsContent value="signup">
+                <form onSubmit={handleSignUp} className="mt-4 space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name" className="block text-right">
+                      שם מלא
+                    </Label>
+                    <Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email2" className="block text-right">
+                      אימייל
+                    </Label>
+                    <Input
+                      id="email2"
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      dir="ltr"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password2" className="block text-right">
+                      סיסמה
+                    </Label>
+                    <Input
+                      id="password2"
+                      type="password"
+                      required
+                      minLength={6}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      dir="ltr"
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? "נרשם..." : "הרשם"}
+                  </Button>
+                </form>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
