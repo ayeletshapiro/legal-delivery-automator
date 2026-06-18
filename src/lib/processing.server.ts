@@ -136,6 +136,87 @@ async function resolveClientId(
   return { clientId: misc.id, matched: false };
 }
 
+interface DeliverySheetWriteInput {
+  deliveryId: string;
+  messageId: string | null;
+  userId: string;
+  clientId: string;
+  delivery_date: string;
+  description: string;
+  contact_ordered_by: string | null;
+  notes: string | null;
+  price: number | null;
+}
+
+export async function writeDeliveryToClientSheet(
+  supabase: DB,
+  delivery: DeliverySheetWriteInput,
+): Promise<{ writeStatus: string; writeError: string | null }> {
+  let writeStatus: string = "pending";
+  let writeError: string | null = null;
+
+  if (delivery.price == null) return { writeStatus, writeError };
+
+  try {
+    const { data: clientRow, error: clientErr } = await supabase
+      .from("clients")
+      .select("google_sheet_id, client_name")
+      .eq("id", delivery.clientId)
+      .maybeSingle();
+    if (clientErr) throw clientErr;
+    if (!clientRow) throw new Error("הלקוח המשויך למשלוח לא נמצא");
+
+    let sheetId = clientRow.google_sheet_id?.trim() || null;
+    if (!sheetId && clientRow.client_name) {
+      sheetId = await createSheetForClient(clientRow.client_name);
+      const { error: updateClientErr } = await supabase
+        .from("clients")
+        .update({ google_sheet_id: sheetId })
+        .eq("id", delivery.clientId);
+      if (updateClientErr) throw new Error(`שמירת מזהה הגיליון נכשלה: ${updateClientErr.message}`);
+    }
+
+    if (sheetId) {
+      const result = await appendDeliveryToSheet(sheetId, {
+        delivery_date: delivery.delivery_date,
+        description: delivery.description,
+        contact_ordered_by: delivery.contact_ordered_by,
+        notes: delivery.notes,
+        price: delivery.price,
+      });
+      if (result.ok) {
+        writeStatus = "נכתב";
+      } else {
+        writeStatus = "שגיאה";
+        writeError = result.error ?? "שגיאה לא ידועה";
+      }
+    } else {
+      writeStatus = "ללא גיליון";
+    }
+  } catch (createOrWriteErr: unknown) {
+    writeStatus = "שגיאה";
+    writeError = createOrWriteErr instanceof Error ? createOrWriteErr.message : "שגיאה לא ידועה ביצירת/כתיבת גיליון";
+  }
+
+  const { error: updateDeliveryErr } = await supabase.from("deliveries").update({
+    write_status: writeStatus,
+    write_error: writeError,
+    written_at: writeStatus === "נכתב" ? new Date().toISOString() : null,
+  }).eq("id", delivery.deliveryId);
+  if (updateDeliveryErr) throw updateDeliveryErr;
+
+  if (writeStatus === "שגיאה" && writeError && delivery.messageId) {
+    await supabase.from("processing_errors").insert({
+      message_id: delivery.messageId,
+      user_id: delivery.userId,
+      error_type: "sheet_write_failed",
+      error_description: `כשל בכתיבה לגיליון: ${writeError}`,
+    });
+  }
+
+  return { writeStatus, writeError };
+}
+
 
 export interface ProcessResult {
   ok: boolean;
@@ -200,59 +281,18 @@ export async function processIncomingMessage(
     }).select("id").single();
     if (delErr) throw delErr;
 
-    // Attempt to write to the client's Google Sheet (only if client matched, has price, and has a sheet id)
-    let writeStatus: string = "pending";
-    let writeError: string | null = null;
     if (matched && parsed.price != null) {
-      const { data: clientRow } = await supabase
-        .from("clients")
-        .select("google_sheet_id, client_name")
-        .eq("id", clientId)
-        .maybeSingle();
-      let sheetId = clientRow?.google_sheet_id?.trim() || null;
-
-      // Auto-create a sheet for this client on first delivery
-      if (!sheetId && clientRow?.client_name) {
-        try {
-          sheetId = await createSheetForClient(clientRow.client_name);
-          await supabase.from("clients").update({ google_sheet_id: sheetId }).eq("id", clientId);
-        } catch (createErr: unknown) {
-          const msg = createErr instanceof Error ? createErr.message : "שגיאה לא ידועה ביצירת גיליון";
-          writeStatus = "שגיאה";
-          writeError = msg;
-        }
-      }
-
-      if (writeStatus !== "שגיאה" && sheetId) {
-        const result = await appendDeliveryToSheet(sheetId, {
-          delivery_date: deliveryDate,
-          description: parsed.description,
-          contact_ordered_by: parsed.contact_ordered_by,
-          notes: parsed.notes,
-          price: parsed.price,
-        });
-        if (result.ok) {
-          writeStatus = "נכתב";
-        } else {
-          writeStatus = "שגיאה";
-          writeError = result.error ?? "שגיאה לא ידועה";
-        }
-      } else if (writeStatus !== "שגיאה") {
-        writeStatus = "ללא גיליון";
-      }
-      await supabase.from("deliveries").update({
-        write_status: writeStatus,
-        write_error: writeError,
-        written_at: writeStatus === "נכתב" ? new Date().toISOString() : null,
-      }).eq("id", delivery.id);
-
-      if (writeStatus === "שגיאה" && writeError) {
-        await supabase.from("processing_errors").insert({
-          message_id: messageId, user_id: msg.user_id,
-          error_type: "sheet_write_failed",
-          error_description: `כשל בכתיבה לגיליון: ${writeError}`,
-        });
-      }
+      await writeDeliveryToClientSheet(supabase, {
+        deliveryId: delivery.id,
+        messageId,
+        userId: msg.user_id,
+        clientId,
+        delivery_date: deliveryDate,
+        description: parsed.description,
+        contact_ordered_by: parsed.contact_ordered_by,
+        notes: parsed.notes,
+        price: parsed.price,
+      });
     }
 
     const finalStatus = matched ? "done" : "missing_client";
