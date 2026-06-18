@@ -8,8 +8,248 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { appendDeliveryToSheet, createSheetForClient } from "./sheets.server";
+import { sendWhatsAppMessage } from "./twilio.server";
 
 type DB = SupabaseClient<Database>;
+
+const CLARIFICATION_TTL_HOURS = 24;
+
+function buildClarificationMessage(rawText: string): string {
+  const truncated = rawText.length > 200 ? rawText.slice(0, 200) + "…" : rawText;
+  return [
+    "🤖 לא זיהיתי לקוח עבור ההודעה:",
+    `"${truncated}"`,
+    "",
+    "איך לשייך? ענה/י באחת הדרכים:",
+    "• שם הלקוח (לדוגמה: כהן ושות׳)",
+    '• "מזדמנים" — לשמור תחת לקוחות מזדמנים',
+    '• "חדש: <שם>" — ליצור לקוח חדש בשם הזה',
+  ].join("\n");
+}
+
+/**
+ * Expire (auto-close) any clarifications open for more than TTL hours for this user.
+ * For each expired clarification: assign its delivery to "מזדמנים" and write to that sheet.
+ */
+async function expireStaleClarifications(supabase: DB, userId: string): Promise<void> {
+  const cutoff = new Date(Date.now() - CLARIFICATION_TTL_HOURS * 3600 * 1000).toISOString();
+  const { data: stale } = await supabase
+    .from("pending_clarifications")
+    .select("id, delivery_id, message_id")
+    .eq("user_id", userId)
+    .is("resolved_at", null)
+    .lt("created_at", cutoff);
+  if (!stale || stale.length === 0) return;
+
+  const { data: misc } = await supabase
+    .from("clients")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("is_miscellaneous", true)
+    .maybeSingle();
+
+  for (const row of stale) {
+    if (misc?.id) {
+      const { data: del } = await supabase
+        .from("deliveries")
+        .select("id, message_id, user_id, delivery_date, description, contact_ordered_by, notes, price")
+        .eq("id", row.delivery_id)
+        .maybeSingle();
+      if (del) {
+        await supabase.from("deliveries").update({
+          client_id: misc.id,
+          write_status: "pending",
+          write_error: null,
+        }).eq("id", del.id);
+        await writeDeliveryToClientSheet(supabase, {
+          deliveryId: del.id,
+          messageId: del.message_id,
+          userId: del.user_id,
+          clientId: misc.id,
+          delivery_date: del.delivery_date,
+          description: del.description,
+          contact_ordered_by: del.contact_ordered_by,
+          notes: del.notes,
+          price: del.price,
+        });
+      }
+    }
+    await supabase.from("pending_clarifications").update({
+      resolved_at: new Date().toISOString(),
+      resolution: "expired",
+    }).eq("id", row.id);
+    await supabase.from("processing_errors").insert({
+      message_id: row.message_id,
+      user_id: userId,
+      error_type: "clarification_expired",
+      error_description: "בירור לקוח פג תוקף (24 שעות), המשלוח שובץ אוטומטית למזדמנים",
+    });
+  }
+}
+
+/**
+ * Handle an inbound WhatsApp text as a reply to the user's most recent open clarification.
+ * Returns true if it was handled as a clarification reply (and so should NOT be processed as a new delivery).
+ */
+export async function tryHandleClarificationReply(
+  supabase: DB,
+  userId: string,
+  userPhone: string,
+  replyText: string,
+): Promise<boolean> {
+  await expireStaleClarifications(supabase, userId);
+
+  const { data: open } = await supabase
+    .from("pending_clarifications")
+    .select("id, delivery_id, message_id, raw_text, created_at")
+    .eq("user_id", userId)
+    .is("resolved_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!open) return false;
+
+  const text = replyText.trim();
+  if (!text) return false;
+
+  // Normalize quotes
+  const lc = text.toLowerCase().replace(/["'״׳]/g, "");
+
+  let mode: "misc" | "create" | "name";
+  let nameArg: string | null = null;
+
+  if (/^(מזדמנים|misc)\b/i.test(lc)) {
+    mode = "misc";
+  } else if (/^חדש\s*[:：]/.test(text) || /^new\s*:/i.test(text)) {
+    mode = "create";
+    nameArg = text.replace(/^(חדש|new)\s*[:：]\s*/i, "").trim();
+    if (!nameArg) {
+      await sendWhatsAppMessage(userPhone, "❗ ציין/י שם אחרי \"חדש:\" — לדוגמה: חדש: כהן ושות׳");
+      return true;
+    }
+  } else {
+    mode = "name";
+    nameArg = text;
+  }
+
+  // Load delivery
+  const { data: del } = await supabase
+    .from("deliveries")
+    .select("id, message_id, user_id, delivery_date, description, contact_ordered_by, notes, price")
+    .eq("id", open.delivery_id)
+    .maybeSingle();
+  if (!del) {
+    // Stale — close clarification
+    await supabase.from("pending_clarifications").update({
+      resolved_at: new Date().toISOString(), resolution: "expired",
+    }).eq("id", open.id);
+    return false;
+  }
+
+  let targetClientId: string | null = null;
+  let resolution: "matched" | "misc" | "created" = "misc";
+  let confirmName = "";
+
+  if (mode === "misc") {
+    const { data: misc } = await supabase
+      .from("clients").select("id, client_name")
+      .eq("user_id", userId).eq("is_miscellaneous", true).maybeSingle();
+    if (!misc) {
+      await sendWhatsAppMessage(userPhone, "❗ לא נמצא לקוח \"מזדמנים\" במערכת.");
+      return true;
+    }
+    targetClientId = misc.id;
+    confirmName = misc.client_name;
+    resolution = "misc";
+  } else if (mode === "create") {
+    // Check existing first to avoid duplicates
+    const norm = nameArg!.toLowerCase().replace(/["'״׳]/g, "").replace(/\s+/g, " ").trim();
+    const { data: existingClients } = await supabase
+      .from("clients").select("id, client_name")
+      .eq("user_id", userId).eq("is_archived", false);
+    const existing = (existingClients ?? []).find(
+      (c) => c.client_name.toLowerCase().replace(/["'״׳]/g, "").replace(/\s+/g, " ").trim() === norm,
+    );
+    if (existing) {
+      targetClientId = existing.id;
+      confirmName = existing.client_name;
+      resolution = "matched";
+    } else {
+      const { data: created, error: createErr } = await supabase
+        .from("clients").insert({ user_id: userId, client_name: nameArg!, is_miscellaneous: false })
+        .select("id, client_name").single();
+      if (createErr || !created) {
+        await sendWhatsAppMessage(userPhone, `❗ לא הצלחתי ליצור לקוח חדש: ${createErr?.message ?? "שגיאה"}`);
+        return true;
+      }
+      targetClientId = created.id;
+      confirmName = created.client_name;
+      resolution = "created";
+    }
+  } else {
+    // mode === "name" — try to resolve via existing clients/aliases
+    const { clientId, matched } = await resolveClientId(supabase, userId, nameArg, nameArg!);
+    if (!matched) {
+      // Re-send the clarification prompt
+      await sendWhatsAppMessage(userPhone, [
+        `❓ לא מצאתי לקוח בשם "${nameArg}".`,
+        "ענה/י שוב:",
+        "• שם מדויק של לקוח קיים",
+        '• "מזדמנים"',
+        '• "חדש: <שם>" ליצירת לקוח חדש',
+      ].join("\n"));
+      return true;
+    }
+    targetClientId = clientId;
+    const { data: c } = await supabase.from("clients").select("client_name").eq("id", clientId).maybeSingle();
+    confirmName = c?.client_name ?? nameArg!;
+    resolution = "matched";
+  }
+
+  // Reassign delivery and write to sheet
+  await supabase.from("deliveries").update({
+    client_id: targetClientId,
+    write_status: "pending",
+    write_error: null,
+  }).eq("id", del.id);
+
+  const writeRes = await writeDeliveryToClientSheet(supabase, {
+    deliveryId: del.id,
+    messageId: del.message_id,
+    userId: del.user_id,
+    clientId: targetClientId!,
+    delivery_date: del.delivery_date,
+    description: del.description,
+    contact_ordered_by: del.contact_ordered_by,
+    notes: del.notes,
+    price: del.price,
+  });
+
+  // Resolve clarification + update original message status
+  await supabase.from("pending_clarifications").update({
+    resolved_at: new Date().toISOString(),
+    resolution,
+  }).eq("id", open.id);
+  await supabase.from("incoming_messages").update({
+    status: "done",
+    error_detail: null,
+    processed_at: new Date().toISOString(),
+  }).eq("id", del.message_id);
+
+  let confirmMsg = "";
+  if (resolution === "created") {
+    confirmMsg = `✅ נוצר לקוח חדש "${confirmName}" והמשלוח נשמר.`;
+  } else if (resolution === "misc") {
+    confirmMsg = `✅ המשלוח נשמר תחת "${confirmName}".`;
+  } else {
+    confirmMsg = `✅ המשלוח שויך ל"${confirmName}" ונשמר.`;
+  }
+  if (writeRes.writeStatus !== "נכתב") {
+    confirmMsg += `\n⚠️ הערה לגבי הכתיבה לגיליון: ${writeRes.writeError ?? writeRes.writeStatus}`;
+  }
+  await sendWhatsAppMessage(userPhone, confirmMsg);
+  return true;
+}
 
 interface ParsedDelivery {
   client_name: string | null;
