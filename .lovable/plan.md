@@ -1,55 +1,66 @@
-# כתיבה אוטומטית ל-Google Sheets
+# RTL וגיליון אוטומטי לכל לקוח
 
-## מבנה השורה בגיליון (RTL)
-עמודות A→G:
+## 1. RTL בגיליון Google Sheets
 
-| A | B | C | D | E | F | G |
-|---|---|---|---|---|---|---|
-| תאריך | תיאור | הזמין | הערות | מחיר | סה"כ ללא מע"מ | סה"כ אחרי מע"מ |
+הבעיה: גיליון Google חדש הוא LTR כברירת מחדל, אז עמודה A מופיעה משמאל — לא מתאים לעברית.
 
-- שדה `price` במשלוח = **מחיר** (עמודה E).
-- **סה"כ ללא מע"מ** (F) = `price` (כרגע משלוח בודד; אם בעתיד יהיה ריבוי פריטים, זה הסכום).
-- **סה"כ אחרי מע"מ** (G) = `price × 1.18` (מע"מ 18%).
-- בכל לקוח חדש - בודק אם השורה הראשונה ריקה ומוסיף כותרות אוטומטית בפעם הראשונה.
+הפתרון: קריאה ל-`batchUpdate` של Sheets כדי להגדיר את הגיליון כ-RTL:
 
-## איך הזרימה תעבוד
+```
+POST /spreadsheets/{id}:batchUpdate
+{ "requests": [{ "updateSheetProperties": {
+    "properties": { "sheetId": 0, "rightToLeft": true },
+    "fields": "rightToLeft"
+}}]}
+```
 
-1. הודעה נכנסת → AI מזהה → לקוח+מחיר קיימים → המשלוח נכתב ל-DB.
-2. **מיד אחרי**: השרת קורא ל-Google Sheets API עם ה-`google_sheet_id` של הלקוח.
-3. אם הצליח → `write_status = "נכתב"` + `written_at = now()`.
-4. אם נכשל → `write_status = "שגיאה"` + רישום ב-`processing_errors` עם הסיבה.
-5. אם ללקוח אין `google_sheet_id` → `write_status = "ללא גיליון"` (לא שגיאה).
+כך עמודה A (תאריך) תוצג בצד ימין ו-G (סה"כ אחרי מע"מ) בצד שמאל. נעשה זאת פעם אחת בלבד — כשיוצרים כותרות חדשות ב-`ensureHeaders` (כך גם גיליונות ישנים שלא היו RTL ייכנסו לתבנית הנכונה כשנכתב לראשונה).
 
-## שלבים
+## 2. עמוד השליחויות (deliveries.tsx) — סדר עמודות
 
-### 1. חיבור Google Sheets connector
-אשלח לך כפתור "התחבר ל-Google Sheets". תתחברי עם **חשבון Google שלך** לבדיקות. בעתיד - ניתוק וחיבור מחדש עם החשבון של הלקוח (ללא שינויי קוד).
+האפליקציה כבר RTL כללית. אקרא את `src/routes/_authenticated/deliveries.tsx` ואסדר את עמודות הטבלה לפי הסדר שביקשת (מימין לשמאל):
+תאריך → תיאור → הזמין → הערות → מחיר → סה"כ ללא מע"מ → סה"כ אחרי מע"מ → סטטוס כתיבה.
+שתי עמודות הסה"כ יחושבו בצד הלקוח (price ו-`price × 1.18`) כדי להציג את אותם ערכים כמו בגיליון.
 
-### 2. עדכון enum של write_status
-הוספת ערך `"ללא גיליון"` ל-enum הקיים (למשלוחים של לקוחות בלי גיליון).
+## 3. יצירה אוטומטית של גיליון ללקוח חדש
 
-### 3. פונקציית כתיבה לגיליון
-קובץ חדש `src/lib/sheets.server.ts` עם פונקציה `appendDeliveryToSheet(sheetId, delivery)`:
-- בודק אם יש כותרות בשורה 1; אם לא - כותב אותן.
-- מוסיף שורה חדשה דרך `values:append` עם `valueInputOption=USER_ENTERED`.
-- מחזיר `{ ok: true }` או `{ ok: false, error: string }`.
+זרימה ב-`processing.server.ts` אחרי שזיהינו לקוח (matched) ויש מחיר:
 
-### 4. שילוב בעיבוד הודעה
-ב-`processing.server.ts`, אחרי הצלחת `insert` של המשלוח:
-- שולפים את `clients.google_sheet_id`.
-- אם קיים - קוראים ל-`appendDeliveryToSheet`.
-- מעדכנים `write_status` בהתאם, ואם נכשל - יוצרים שורה ב-`processing_errors`.
+```
+load client (google_sheet_id, client_name)
+if !google_sheet_id:
+  sheetId = await createSheetForClient(client_name)
+  update clients set google_sheet_id = sheetId where id = clientId
+appendDeliveryToSheet(sheetId, ...)
+```
 
-### 5. כפתור "כתוב מחדש לגיליון" בעמוד משלוחים (אופציונלי בשלב זה)
-כדי לאפשר ניסיון חוזר ידני אם משלוח נכשל. (אפשר לדחות לאיטרציה הבאה אם תרצי - תגידי).
+### `createSheetForClient(clientName)` חדשה ב-`sheets.server.ts`
 
-## הערות חשובות
-- **מע"מ**: השתמשתי ב-18% (השיעור הנוכחי בישראל מ-2025). אם זה צריך להיות אחר או להגיע מהגדרות - תגידי.
-- **שיתוף הגיליונות**: כל גיליון של לקוח חייב להיות משותף עם החשבון שאת מחברת, עם **הרשאת עריכה**. אחרת הכתיבה תיכשל עם 403.
-- **`google_sheet_id`**: זה המזהה מתוך ה-URL של הגיליון (החלק בין `/d/` ל-`/edit`).
+```
+POST /spreadsheets
+{
+  "properties": { "title": `שליחויות - ${clientName}`, "locale": "he_IL" },
+  "sheets": [{ "properties": { "title": "שליחויות", "rightToLeft": true } }]
+}
+```
 
-## מה אני צריך ממך לאישור
-1. ✅ אישור על מבנה העמודות והנוסחה למע"מ (18%)?
-2. ✅ האם להוסיף את כפתור "כתוב מחדש" עכשיו או אחר כך?
+מחזיר `spreadsheetId`. מיד אחר כך `ensureHeaders` יכתוב את שורת הכותרות.
 
-ברגע שתאשרי, אתחיל בבניית החיבור והקוד.
+### הערות חשובות
+- **בעלות**: הגיליון ייווצר תחת חשבון Google המחובר (כרגע שלך). שיתוף אוטומטי עם מייל הלקוח — דחוי לעתיד לפי בקשתך.
+- **מניעת כפילויות**: נשמור את ה-ID מיד אחרי יצירה כך שלא ייווצרו גיליונות כפולים.
+- **כשל ביצירה**: `write_status = "שגיאה"` + רישום ל-`processing_errors`. ה-ID לא יישמר, כך שניסיון חוזר יצור גיליון חדש.
+
+## 4. עדכון מסך הלקוחות
+
+שדה ה-`google_sheet_id` יישאר עריך (אפשר להחליף ידנית). נוסיף placeholder/רמז קטן: "ייווצר אוטומטית בהודעה הראשונה" כשהשדה ריק.
+
+## קבצים שייגעו
+
+- `src/lib/sheets.server.ts` — `createSheetForClient` חדשה, קריאת `batchUpdate` ל-rightToLeft ב-`ensureHeaders`.
+- `src/lib/processing.server.ts` — יצירה אוטומטית + שמירת ה-ID חזרה בטבלת clients.
+- `src/routes/_authenticated/deliveries.tsx` — סדר עמודות + שתי עמודות סה"כ.
+- `src/routes/_authenticated/clients.tsx` — placeholder לשדה ה-ID.
+
+## שדרוג עתידי (לזכור)
+שיתוף אוטומטי של הגיליון עם מייל הלקוח כ-editor אחרי יצירתו — דורש הוספת `client_email` לטבלת clients. לא נעשה עכשיו.
