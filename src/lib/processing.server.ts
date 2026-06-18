@@ -351,19 +351,79 @@ export async function tryHandleClarificationReply(
     processed_at: new Date().toISOString(),
   }).eq("id", del.message_id);
 
-  let confirmMsg = "";
-  if (resolution === "created") confirmMsg = `✅ נוצר לקוח חדש "${confirmName}" והמשלוח נשמר.`;
-  else if (resolution === "misc") confirmMsg = `✅ המשלוח נשמר תחת "${confirmName}".`;
-  else confirmMsg = `✅ המשלוח שויך ל"${confirmName}" ונשמר.`;
-  if (!isWritten) confirmMsg += `\n⚠️ הערה לגבי הכתיבה לגיליון: ${writeRes.writeError ?? writeRes.writeStatus}`;
-
-  await sendWhatsAppMessage(userPhone, confirmMsg, {
-    fromPhone: businessPhone, supabase, userId,
-    incomingMessageId: incomingMessageId ?? del.message_id,
-    replyType: "confirmation",
-  });
+  if (isWritten) {
+    await sendConfirmationIfNeeded(supabase, {
+      toPhone: userPhone,
+      fromPhone: businessPhone,
+      userId,
+      originalMessageId: del.message_id,
+      clientName: confirmName,
+      deliveryDate: del.delivery_date,
+      description: del.description,
+      price: del.price,
+    });
+  } else {
+    const warn = `⚠️ לא הצלחתי לכתוב לגיליון של "${confirmName}": ${writeRes.writeError ?? writeRes.writeStatus}`;
+    await sendWhatsAppMessage(userPhone, warn, {
+      fromPhone: businessPhone, supabase, userId,
+      incomingMessageId: incomingMessageId ?? del.message_id,
+      replyType: "confirmation_failed",
+    });
+  }
   return { kind: "resolved", deliveryId: del.id };
 }
+
+function formatHebrewDate(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+
+async function sendConfirmationIfNeeded(
+  supabase: DB,
+  args: {
+    toPhone: string;
+    fromPhone?: string | null;
+    userId: string;
+    originalMessageId: string | null;
+    clientName: string;
+    deliveryDate: string;
+    description: string;
+    price: number | null;
+  },
+): Promise<void> {
+  if (!args.originalMessageId) return;
+  // Dedup: don't resend a successful confirmation for the same original message.
+  const { data: prior } = await supabase
+    .from("outbound_messages")
+    .select("id")
+    .eq("incoming_message_id", args.originalMessageId)
+    .eq("reply_type", "confirmation_success")
+    .eq("status", "sent")
+    .limit(1)
+    .maybeSingle();
+  if (prior) return;
+
+  const priceLine = args.price == null ? "מחיר: לא צוין" : `מחיר: ${args.price} ₪`;
+  const body = [
+    `נוספה שורה ללקוח: ${args.clientName}`,
+    "",
+    `תאריך: ${formatHebrewDate(args.deliveryDate)}`,
+    `פירוט: ${args.description}`,
+    priceLine,
+    "",
+    "השליחות נשמרה בהצלחה.",
+  ].join("\n");
+
+  await sendWhatsAppMessage(args.toPhone, body, {
+    fromPhone: args.fromPhone,
+    supabase,
+    userId: args.userId,
+    incomingMessageId: args.originalMessageId,
+    replyType: "confirmation_success",
+  });
+}
+
 
 interface ParsedDelivery {
   client_name: string | null;
