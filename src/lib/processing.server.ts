@@ -599,7 +599,7 @@ export async function processIncomingMessage(
       price: parsed.price,
       price_missing: parsed.price == null,
       contact_ordered_by: parsed.contact_ordered_by,
-      write_status: "pending",
+      write_status: matched ? "pending" : "awaiting_clarification",
     }).select("id").single();
     if (delErr) throw delErr;
 
@@ -615,22 +615,66 @@ export async function processIncomingMessage(
         notes: parsed.notes,
         price: parsed.price,
       });
+
+      await supabase.from("incoming_messages").update({
+        status: "done", error_detail: null, processed_at: new Date().toISOString(),
+      }).eq("id", messageId);
+      return { ok: true, status: "done", deliveryId: delivery.id };
     }
 
-    const finalStatus = matched ? "done" : "missing_client";
-    const errDetail = matched ? null : `שובץ ל"מזדמנים" — לא זוהה לקוח מתוך: ${parsed.client_name ?? "(ריק)"}`;
+    // Not matched → start a clarification flow via WhatsApp.
+    // Expire any old open clarifications first, then create a new one.
+    await expireStaleClarifications(supabase, msg.user_id);
+
+    const { error: clarifErr } = await supabase.from("pending_clarifications").insert({
+      user_id: msg.user_id,
+      message_id: messageId,
+      delivery_id: delivery.id,
+      raw_text: text,
+    });
+
+    let clarificationSent = false;
+    let waError: string | null = null;
+    if (!clarifErr && msg.sender_phone) {
+      const send = await sendWhatsAppMessage(msg.sender_phone, buildClarificationMessage(text));
+      clarificationSent = send.ok;
+      waError = send.ok ? null : (send.error ?? "שליחת WhatsApp נכשלה");
+    } else if (clarifErr) {
+      waError = clarifErr.message;
+    }
+
+    if (clarificationSent) {
+      await supabase.from("incoming_messages").update({
+        status: "missing_client",
+        error_detail: "ממתין להבהרה דרך WhatsApp",
+        processed_at: new Date().toISOString(),
+      }).eq("id", messageId);
+      return { ok: true, status: "missing_client", deliveryId: delivery.id };
+    }
+
+    // Fallback: write to misc immediately so data is never lost.
+    await supabase.from("deliveries").update({ write_status: "pending" }).eq("id", delivery.id);
+    await writeDeliveryToClientSheet(supabase, {
+      deliveryId: delivery.id,
+      messageId,
+      userId: msg.user_id,
+      clientId,
+      delivery_date: deliveryDate,
+      description: parsed.description,
+      contact_ordered_by: parsed.contact_ordered_by,
+      notes: parsed.notes,
+      price: parsed.price,
+    });
+    const errDetail = `שובץ ל"מזדמנים" — לא זוהה לקוח. שליחת הבהרה ב-WhatsApp נכשלה: ${waError ?? "לא ידוע"}`;
     await supabase.from("incoming_messages").update({
-      status: finalStatus, error_detail: errDetail, processed_at: new Date().toISOString(),
+      status: "missing_client", error_detail: errDetail, processed_at: new Date().toISOString(),
     }).eq("id", messageId);
-
-    if (!matched) {
-      await supabase.from("processing_errors").insert({
-        message_id: messageId, user_id: msg.user_id,
-        error_type: "missing_client",
-        error_description: errDetail!,
-      });
-    }
-    return { ok: true, status: finalStatus, deliveryId: delivery.id };
+    await supabase.from("processing_errors").insert({
+      message_id: messageId, user_id: msg.user_id,
+      error_type: "missing_client",
+      error_description: errDetail,
+    });
+    return { ok: true, status: "missing_client", deliveryId: delivery.id };
   } catch (e: any) {
     const reason = e?.message ?? "שגיאה לא ידועה";
     await supabase.from("incoming_messages").update({
