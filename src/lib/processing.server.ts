@@ -15,6 +15,43 @@ type DB = SupabaseClient<Database>;
 const CLARIFICATION_TTL_HOURS = 24;
 const CANCEL_WORDS = ["בטל", "ביטול", "דלג", "התחל מחדש", "cancel"];
 
+/** Today as YYYY-MM-DD in Asia/Jerusalem (not UTC). */
+function israelToday(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")!.value;
+  const m = parts.find((p) => p.type === "month")!.value;
+  const d = parts.find((p) => p.type === "day")!.value;
+  return `${y}-${m}-${d}`;
+}
+
+/** Validate YYYY-MM-DD as a real calendar date. */
+function isValidIsoDate(s: string | null | undefined): s is string {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+/** Read VAT rate from app_config (cached per request). Falls back to 0.18. */
+let _vatRateCache: number | null = null;
+async function loadVatRate(supabase: DB, userId: string): Promise<number> {
+  if (_vatRateCache != null) return _vatRateCache;
+  const { data } = await supabase
+    .from("app_config")
+    .select("vat_rate")
+    .or(`user_id.eq.${userId},user_id.is.null`)
+    .order("user_id", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+  _vatRateCache = typeof data?.vat_rate === "number" ? data.vat_rate : 0.18;
+  return _vatRateCache;
+}
+
 function buildClarificationMessage(rawText: string, suggestions: string[] = []): string {
   const truncated = rawText.length > 200 ? rawText.slice(0, 200) + "…" : rawText;
   const lines = [
