@@ -13,18 +13,82 @@ import { sendWhatsAppMessage } from "./twilio.server";
 type DB = SupabaseClient<Database>;
 
 const CLARIFICATION_TTL_HOURS = 24;
+const CANCEL_WORDS = ["בטל", "ביטול", "דלג", "התחל מחדש", "cancel"];
 
-function buildClarificationMessage(rawText: string): string {
+function buildClarificationMessage(rawText: string, suggestions: string[] = []): string {
   const truncated = rawText.length > 200 ? rawText.slice(0, 200) + "…" : rawText;
-  return [
-    "🤖 לא זיהיתי לקוח עבור ההודעה:",
+  const lines = [
+    "🤖 לא זיהיתי לאיזה לקוח לשייך את השליחות:",
     `"${truncated}"`,
     "",
-    "איך לשייך? ענה/י באחת הדרכים:",
-    "• שם הלקוח (לדוגמה: כהן ושות׳)",
-    '• "מזדמנים" — לשמור תחת לקוחות מזדמנים',
-    '• "חדש: <שם>" — ליצור לקוח חדש בשם הזה',
-  ].join("\n");
+    "מה לעשות?",
+    "• אם זה לקוח קיים — כתוב את שם הלקוח המדויק",
+    "• אם זה לקוח חדש — כתוב: חדש: שם הלקוח",
+    "• לשייך למזדמנים — כתוב: מזדמנים",
+    "• לביטול — כתוב: בטל",
+  ];
+  if (suggestions.length) {
+    lines.push("", "אולי התכוונת לאחד מאלה:");
+    for (const s of suggestions) lines.push(`• ${s}`);
+  }
+  return lines.join("\n");
+}
+
+function similarityScore(a: string, b: string): number {
+  const x = normalize(a);
+  const y = normalize(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  if (x.includes(y) || y.includes(x)) return 0.8;
+  const bigrams = (s: string) => {
+    const out = new Set<string>();
+    for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
+    return out;
+  };
+  const A = bigrams(x);
+  const B = bigrams(y);
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  for (const g of A) if (B.has(g)) inter++;
+  return (2 * inter) / (A.size + B.size);
+}
+
+async function suggestSimilarClients(
+  supabase: DB,
+  userId: string,
+  hint: string,
+): Promise<string[]> {
+  if (!hint || !hint.trim()) return [];
+  const { data: clients } = await supabase
+    .from("clients")
+    .select("client_name, is_miscellaneous, is_archived")
+    .eq("user_id", userId)
+    .eq("is_archived", false);
+  const candidates = (clients ?? []).filter((c) => !c.is_miscellaneous);
+  return candidates
+    .map((c) => ({ name: c.client_name, score: similarityScore(c.client_name, hint) }))
+    .filter((s) => s.score >= 0.45)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((s) => s.name);
+}
+
+function containsKnownClient(
+  text: string,
+  clients: Array<{ id: string; client_name: string; is_miscellaneous: boolean }>,
+  aliases: Array<{ client_id: string; alias: string }>,
+): string | null {
+  const norm = ` ${normalize(text)} `;
+  for (const a of aliases) {
+    const n = normalize(a.alias);
+    if (n && norm.includes(` ${n} `)) return a.client_id;
+  }
+  for (const c of clients) {
+    if (c.is_miscellaneous) continue;
+    const n = normalize(c.client_name);
+    if (n && norm.includes(` ${n} `)) return c.id;
+  }
+  return null;
 }
 
 /**
