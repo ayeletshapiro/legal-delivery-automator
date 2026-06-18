@@ -255,15 +255,6 @@ export async function processIncomingMessage(
       }
     }
 
-      if (writeStatus === "שגיאה" && writeError) {
-        await supabase.from("processing_errors").insert({
-          message_id: messageId, user_id: msg.user_id,
-          error_type: "sheet_write_failed",
-          error_description: `כשל בכתיבה לגיליון: ${writeError}`,
-        });
-      }
-    }
-
     const finalStatus = matched ? "done" : "missing_client";
     const errDetail = matched ? null : `שובץ ל"מזדמנים" — לא זוהה לקוח מתוך: ${parsed.client_name ?? "(ריק)"}`;
     await supabase.from("incoming_messages").update({
