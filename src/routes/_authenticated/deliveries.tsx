@@ -38,6 +38,7 @@ const writeStatusLabels: Record<string, string> = {
   written: "נכתב",
   failed: "כשל בכתיבה",
   skipped: "דולג",
+  awaiting_clarification: "ממתין להבהרה",
 };
 
 type Delivery = {
