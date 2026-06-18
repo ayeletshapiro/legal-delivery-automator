@@ -193,7 +193,7 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
 
             const fd = new FormData();
             fd.append("file", new Blob([audioBuf], { type: baseType }), filename);
-            fd.append("model", "openai/gpt-4o-mini-transcribe");
+            fd.append("model", process.env.TRANSCRIPTION_MODEL || "openai/gpt-4o-transcribe");
             fd.append("language", "he");
 
             const sttResp = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
