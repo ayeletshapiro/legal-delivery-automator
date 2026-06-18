@@ -34,8 +34,10 @@ Return STRICT JSON only, matching this schema:
 Rules:
 - Output JSON only. No markdown, no commentary.
 - description is REQUIRED and must be non-empty Hebrew text.
+- client_name: usually the FIRST word or line of the message (a surname like "הלפר", a firm like "כהן ושות'", or "עו\"ד X" / "משרד X"). Extract it even if it's a single word with no title. Only return null if the message clearly has no name at the start.
 - Dates: "היום"=today, "מחר"=tomorrow. Use the provided "today" date as reference.
 - If you cannot extract a description, set description to the raw text.`;
+
 
 async function callLovableAI(rawText: string): Promise<ParsedDelivery> {
   const apiKey = process.env.LOVABLE_API_KEY;
