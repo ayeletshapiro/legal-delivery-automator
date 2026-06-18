@@ -642,6 +642,8 @@ export async function writeDeliveryToClientSheet(
   let writeStatus: string = "pending";
   let writeError: string | null = null;
   let writtenSheetId: string | null = null;
+  let writtenSheetName: string | null = null;
+  let writtenRowNumber: number | null = null;
 
   try {
     const { data: clientRow, error: clientErr } = await supabase
@@ -663,29 +665,41 @@ export async function writeDeliveryToClientSheet(
     }
 
     if (sheetId) {
-      // Dedup: check if this delivery was already written to this sheet
+      // Pull the persisted vat_explicit flag from the delivery row.
       const { data: delRow, error: delRowErr } = await supabase
         .from("deliveries")
-        .select("written_sheet_ids")
+        .select("written_sheet_ids, vat_explicit")
         .eq("id", delivery.deliveryId)
         .maybeSingle();
       if (delRowErr) throw delRowErr;
       const already = (delRow?.written_sheet_ids ?? []) as string[];
+      // vat_explicit column added in migration; fall back to false if not yet present.
+      const vatExplicit = Boolean((delRow as Record<string, unknown> | null)?.vat_explicit);
 
+      const vatRate = await loadVatRate(supabase, delivery.userId);
+
+      // Secondary guard — primary dedup happens on the H column inside the sheet writer.
       if (already.includes(sheetId)) {
-        // Already written to this exact sheet — don't append again
         writeStatus = "נכתב";
       } else {
-        const result = await appendDeliveryToSheet(sheetId, {
-          delivery_date: delivery.delivery_date,
-          description: delivery.description,
-          contact_ordered_by: delivery.contact_ordered_by,
-          notes: delivery.notes,
-          price: delivery.price,
-        });
+        const result = await appendDeliveryToSheet(
+          sheetId,
+          {
+            delivery_date: delivery.delivery_date,
+            description: delivery.description,
+            contact_ordered_by: delivery.contact_ordered_by,
+            notes: delivery.notes,
+            price: delivery.price,
+            vat_explicit: vatExplicit,
+            message_id: delivery.messageId,
+          },
+          vatRate,
+        );
         if (result.ok) {
           writeStatus = "נכתב";
           writtenSheetId = sheetId;
+          writtenSheetName = result.sheetName ?? null;
+          writtenRowNumber = result.rowNumber ?? null;
         } else {
           writeStatus = "שגיאה";
           writeError = result.error ?? "שגיאה לא ידועה";
@@ -714,6 +728,8 @@ export async function writeDeliveryToClientSheet(
     write_error: writeError,
     written_at: writeStatus === "נכתב" ? new Date().toISOString() : null,
     ...(newWrittenSheetIds ? { written_sheet_ids: newWrittenSheetIds } : {}),
+    ...(writtenSheetName ? { sheet_name: writtenSheetName } : {}),
+    ...(writtenRowNumber ? { row_number: writtenRowNumber } : {}),
   }).eq("id", delivery.deliveryId);
   if (updateDeliveryErr) throw updateDeliveryErr;
 
