@@ -613,7 +613,7 @@ export async function writeDeliveryToClientSheet(
 
 export interface ProcessResult {
   ok: boolean;
-  status: "done" | "missing_client" | "missing_details" | "failed";
+  status: "done" | "missing_client" | "missing_details" | "failed" | "awaiting_clarification";
   deliveryId?: string;
   errorMessage?: string;
 }
@@ -621,6 +621,7 @@ export interface ProcessResult {
 export async function processIncomingMessage(
   supabase: DB,
   messageId: string,
+  businessPhone?: string | null,
 ): Promise<ProcessResult> {
   // Load message
   const { data: msg, error: msgErr } = await supabase
