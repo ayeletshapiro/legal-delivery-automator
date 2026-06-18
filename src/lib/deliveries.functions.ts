@@ -1,0 +1,78 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+
+export const listDeliveries = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    from?: string | null;
+    to?: string | null;
+    client_id?: string | null;
+    write_status?: string | null;
+  }) =>
+    z.object({
+      from: z.string().nullable().optional(),
+      to: z.string().nullable().optional(),
+      client_id: z.string().uuid().nullable().optional(),
+      write_status: z.string().nullable().optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    let q = context.supabase
+      .from("deliveries")
+      .select("*, clients(client_name)")
+      .order("delivery_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (data.from) q = q.gte("delivery_date", data.from);
+    if (data.to) q = q.lte("delivery_date", data.to);
+    if (data.client_id) q = q.eq("client_id", data.client_id);
+    if (data.write_status) q = q.eq("write_status", data.write_status);
+    const { data: rows, error } = await q;
+    if (error) throw error;
+    return rows;
+  });
+
+export const updateDelivery = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    id: string;
+    client_id?: string;
+    delivery_date?: string;
+    description?: string;
+    notes?: string | null;
+    price?: number | null;
+    contact_ordered_by?: string | null;
+    write_status?: string;
+  }) =>
+    z.object({
+      id: z.string().uuid(),
+      client_id: z.string().uuid().optional(),
+      delivery_date: z.string().optional(),
+      description: z.string().min(1).optional(),
+      notes: z.string().nullable().optional(),
+      price: z.number().nullable().optional(),
+      contact_ordered_by: z.string().nullable().optional(),
+      write_status: z.string().optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { id, ...patch } = data;
+    const update: Record<string, unknown> = { ...patch };
+    if ("price" in patch) update.price_missing = patch.price == null;
+    const { error } = await context.supabase
+      .from("deliveries")
+      .update(update)
+      .eq("id", id);
+    if (error) throw error;
+    return { ok: true };
+  });
+
+export const deleteDelivery = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase.from("deliveries").delete().eq("id", data.id);
+    if (error) throw error;
+    return { ok: true };
+  });
