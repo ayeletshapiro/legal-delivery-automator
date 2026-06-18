@@ -94,7 +94,7 @@ async function ensureHeaders(spreadsheetId: string): Promise<void> {
 
 /** Create a new spreadsheet titled for the client, RTL by default. Returns spreadsheetId. */
 export async function createSheetForClient(clientName: string): Promise<string> {
-  const title = `שליחויות - ${clientName}`.slice(0, 100);
+  const title = clientName.slice(0, 100);
   const resp = await gatewayFetch("/spreadsheets", {
     method: "POST",
     body: JSON.stringify({
@@ -132,9 +132,10 @@ export async function appendDeliveryToSheet(
 
     await ensureHeaders(spreadsheetId);
 
-    const price = delivery.price ?? 0;
-    const totalBeforeVat = price;
-    const totalAfterVat = Number((price * (1 + VAT_RATE)).toFixed(2));
+    const hasPrice = delivery.price != null;
+    const price = hasPrice ? delivery.price! : "";
+    const totalBeforeVat = hasPrice ? delivery.price! : "";
+    const totalAfterVat = hasPrice ? Number((delivery.price! * (1 + VAT_RATE)).toFixed(2)) : "";
 
     const row = [
       formatDate(delivery.delivery_date),
