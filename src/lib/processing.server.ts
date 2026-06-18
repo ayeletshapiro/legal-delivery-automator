@@ -161,6 +161,7 @@ export async function writeDeliveryToClientSheet(
 ): Promise<{ writeStatus: string; writeError: string | null }> {
   let writeStatus: string = "pending";
   let writeError: string | null = null;
+  let writtenSheetId: string | null = null;
 
   try {
     const { data: clientRow, error: clientErr } = await supabase
@@ -182,18 +183,33 @@ export async function writeDeliveryToClientSheet(
     }
 
     if (sheetId) {
-      const result = await appendDeliveryToSheet(sheetId, {
-        delivery_date: delivery.delivery_date,
-        description: delivery.description,
-        contact_ordered_by: delivery.contact_ordered_by,
-        notes: delivery.notes,
-        price: delivery.price,
-      });
-      if (result.ok) {
+      // Dedup: check if this delivery was already written to this sheet
+      const { data: delRow, error: delRowErr } = await supabase
+        .from("deliveries")
+        .select("written_sheet_ids")
+        .eq("id", delivery.deliveryId)
+        .maybeSingle();
+      if (delRowErr) throw delRowErr;
+      const already = (delRow?.written_sheet_ids ?? []) as string[];
+
+      if (already.includes(sheetId)) {
+        // Already written to this exact sheet — don't append again
         writeStatus = "נכתב";
       } else {
-        writeStatus = "שגיאה";
-        writeError = result.error ?? "שגיאה לא ידועה";
+        const result = await appendDeliveryToSheet(sheetId, {
+          delivery_date: delivery.delivery_date,
+          description: delivery.description,
+          contact_ordered_by: delivery.contact_ordered_by,
+          notes: delivery.notes,
+          price: delivery.price,
+        });
+        if (result.ok) {
+          writeStatus = "נכתב";
+          writtenSheetId = sheetId;
+        } else {
+          writeStatus = "שגיאה";
+          writeError = result.error ?? "שגיאה לא ידועה";
+        }
       }
     } else {
       writeStatus = "ללא גיליון";
@@ -203,12 +219,25 @@ export async function writeDeliveryToClientSheet(
     writeError = createOrWriteErr instanceof Error ? createOrWriteErr.message : "שגיאה לא ידועה ביצירת/כתיבת גיליון";
   }
 
+  let newWrittenSheetIds: string[] | null = null;
+  if (writtenSheetId) {
+    const { data: cur } = await supabase
+      .from("deliveries")
+      .select("written_sheet_ids")
+      .eq("id", delivery.deliveryId)
+      .maybeSingle();
+    const existing = ((cur?.written_sheet_ids ?? []) as string[]).filter((s) => s !== writtenSheetId);
+    newWrittenSheetIds = [...existing, writtenSheetId];
+  }
   const { error: updateDeliveryErr } = await supabase.from("deliveries").update({
     write_status: writeStatus,
     write_error: writeError,
     written_at: writeStatus === "נכתב" ? new Date().toISOString() : null,
+    ...(newWrittenSheetIds ? { written_sheet_ids: newWrittenSheetIds } : {}),
   }).eq("id", delivery.deliveryId);
   if (updateDeliveryErr) throw updateDeliveryErr;
+
+
 
   if (writeStatus === "שגיאה" && writeError && delivery.messageId) {
     await supabase.from("processing_errors").insert({
