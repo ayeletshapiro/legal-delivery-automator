@@ -94,7 +94,7 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
           .eq("whatsapp_phone", senderPhone)
           .maybeSingle();
 
-        const { error } = await supabaseAdmin.from("incoming_messages").insert({
+        const { data: inserted, error } = await supabaseAdmin.from("incoming_messages").insert({
           whatsapp_message_id: messageSid,
           sender_phone: senderPhone,
           message_type: messageType,
@@ -102,7 +102,7 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
           media_received: numMedia > 0,
           status: "received",
           user_id: profile?.id ?? null,
-        });
+        }).select("id").single();
 
         if (error) {
           if (error.code === "23505") {
@@ -113,6 +113,17 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
           }
           console.error("[twilio-webhook] insert error", error);
           return new Response(JSON.stringify({ error: "DB error" }), { status: 500 });
+        }
+
+        // Auto-process text messages from known users.
+        if (inserted && profile?.id && messageType === "text" && rawText) {
+          try {
+            const { processIncomingMessage } = await import("@/lib/processing.server");
+            await processIncomingMessage(supabaseAdmin, inserted.id);
+          } catch (e) {
+            console.error("[twilio-webhook] auto-process error", e);
+            // status/error_detail were already set by the processor's catch block
+          }
         }
 
         // Twilio expects TwiML or empty 200. Return empty TwiML.
