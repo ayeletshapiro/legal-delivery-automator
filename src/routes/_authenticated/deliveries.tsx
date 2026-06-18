@@ -13,7 +13,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { Pencil, Trash2 } from "lucide-react";
 
@@ -23,8 +32,8 @@ export const Route = createFileRoute("/_authenticated/deliveries")({
 
 const writeStatusLabels: Record<string, string> = {
   pending: "ממתין",
-  "נכתב": "נכתב",
-  "שגיאה": "שגיאה",
+  נכתב: "נכתב",
+  שגיאה: "שגיאה",
   "ללא גיליון": "ללא גיליון",
   written: "נכתב",
   failed: "כשל בכתיבה",
@@ -100,7 +109,7 @@ function DeliveriesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
-        <h2 className="text-2xl font-bold">משלוחים</h2>
+        <h2 className="text-2xl font-bold">שליחויות</h2>
         <div className="text-sm text-muted-foreground">היום: {today}</div>
       </div>
 
@@ -117,11 +126,15 @@ function DeliveriesPage() {
           <div className="space-y-1">
             <Label className="text-xs">לקוח</Label>
             <Select value={clientId} onValueChange={setClientId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">הכל</SelectItem>
                 {clients?.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.client_name}</SelectItem>
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.client_name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -129,11 +142,15 @@ function DeliveriesPage() {
           <div className="space-y-1">
             <Label className="text-xs">סטטוס כתיבה</Label>
             <Select value={writeStatus} onValueChange={setWriteStatus}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">הכל</SelectItem>
                 {Object.entries(writeStatusLabels).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                  <SelectItem key={k} value={k}>
+                    {v}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -142,7 +159,9 @@ function DeliveriesPage() {
       </Card>
 
       <Card>
-        {isLoading ? <div className="p-8 text-center text-muted-foreground">טוען...</div> : (
+        {isLoading ? (
+          <div className="p-8 text-center text-muted-foreground">טוען...</div>
+        ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -163,47 +182,46 @@ function DeliveriesPage() {
                 const price = d.price ?? 0;
                 const totalAfterVat = Number((price * 1.18).toFixed(2));
                 return (
-                <TableRow key={d.id}>
-                  <TableCell className="text-xs whitespace-nowrap">{d.delivery_date}</TableCell>
-                  <TableCell className="font-medium">{d.clients?.client_name ?? "—"}</TableCell>
-                  <TableCell className="max-w-xs">
-                    <div className="truncate">{d.description}</div>
-                  </TableCell>
-                  <TableCell className="text-xs">{d.contact_ordered_by ?? "—"}</TableCell>
-                  <TableCell className="text-xs max-w-xs truncate">{d.notes ?? "—"}</TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {d.price_missing
-                      ? <Badge variant="destructive">חסר</Badge>
-                      : <span>{d.price} ₪</span>}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {d.price_missing ? "—" : `${price} ₪`}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {d.price_missing ? "—" : `${totalAfterVat} ₪`}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{writeStatusLabels[d.write_status] ?? d.write_status}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => setEditing(d)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" onClick={() => setConfirmDel(d)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                  <TableRow key={d.id}>
+                    <TableCell className="text-xs whitespace-nowrap">{d.delivery_date}</TableCell>
+                    <TableCell className="font-medium">{d.clients?.client_name ?? "—"}</TableCell>
+                    <TableCell className="max-w-xs">
+                      <div className="truncate">{d.description}</div>
+                    </TableCell>
+                    <TableCell className="text-xs">{d.contact_ordered_by ?? "—"}</TableCell>
+                    <TableCell className="text-xs max-w-xs truncate">{d.notes ?? "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {d.price_missing ? <Badge variant="destructive">חסר</Badge> : <span>{d.price} ₪</span>}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {d.price_missing ? "—" : `${price} ₪`}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{d.price_missing ? "—" : `${totalAfterVat} ₪`}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{writeStatusLabels[d.write_status] ?? d.write_status}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button size="icon" variant="ghost" onClick={() => setEditing(d)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={() => setConfirmDel(d)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
               {rows?.length === 0 && (
-                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">אין משלוחים</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                    אין משלוחים
+                  </TableCell>
+                </TableRow>
               )}
             </TableBody>
           </Table>
-
         )}
       </Card>
 
@@ -221,9 +239,7 @@ function DeliveriesPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>למחוק משלוח?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmDel?.description} — פעולה זו אינה הפיכה.
-            </AlertDialogDescription>
+            <AlertDialogDescription>{confirmDel?.description} — פעולה זו אינה הפיכה.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>ביטול</AlertDialogCancel>
@@ -236,7 +252,11 @@ function DeliveriesPage() {
 }
 
 function EditDialog({
-  delivery, clients, onClose, onSave, saving,
+  delivery,
+  clients,
+  onClose,
+  onSave,
+  saving,
 }: {
   delivery: Delivery;
   clients: { id: string; client_name: string }[];
@@ -263,14 +283,22 @@ function EditDialog({
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>עריכת משלוח</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>עריכת משלוח</DialogTitle>
+        </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
             <Label>לקוח</Label>
             <Select value={clientId} onValueChange={setClientId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.client_name}</SelectItem>)}
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.client_name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -289,7 +317,13 @@ function EditDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>מחיר (₪)</Label>
-              <Input type="number" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} dir="ltr" />
+              <Input
+                type="number"
+                inputMode="decimal"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                dir="ltr"
+              />
             </div>
             <div className="space-y-1">
               <Label>הזמין</Label>
@@ -299,29 +333,39 @@ function EditDialog({
           <div className="space-y-1">
             <Label>סטטוס</Label>
             <Select value={ws} onValueChange={setWs}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {Object.entries(writeStatusLabels).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                  <SelectItem key={k} value={k}>
+                    {v}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>ביטול</Button>
+          <Button variant="outline" onClick={onClose}>
+            ביטול
+          </Button>
           <Button
             disabled={saving || !desc.trim() || !date}
-            onClick={() => onSave({
-              client_id: clientId,
-              delivery_date: date,
-              description: desc.trim(),
-              notes: notes.trim() || null,
-              price: price.trim() === "" ? null : Number(price),
-              contact_ordered_by: orderedBy.trim() || null,
-              write_status: ws,
-            })}
-          >שמור</Button>
+            onClick={() =>
+              onSave({
+                client_id: clientId,
+                delivery_date: date,
+                description: desc.trim(),
+                notes: notes.trim() || null,
+                price: price.trim() === "" ? null : Number(price),
+                contact_ordered_by: orderedBy.trim() || null,
+                write_status: ws,
+              })
+            }
+          >
+            שמור
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
