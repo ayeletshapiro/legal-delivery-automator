@@ -742,59 +742,77 @@ export async function processIncomingMessage(
       return { ok: true, status: "done", deliveryId: delivery.id };
     }
 
-    // Not matched → start a clarification flow via WhatsApp.
-    // Expire any old open clarifications first, then create a new one.
+    // Not matched → start (or continue) a clarification flow via WhatsApp.
     await expireStaleClarifications(supabase, msg.user_id);
 
-    const { error: clarifErr } = await supabase.from("pending_clarifications").insert({
-      user_id: msg.user_id,
-      message_id: messageId,
-      delivery_id: delivery.id,
-      raw_text: text,
-    });
+    // Reuse an already-open clarification for this message if it exists (reprocess case).
+    const { data: existingClarif } = await supabase
+      .from("pending_clarifications")
+      .select("id, reply_sent_at")
+      .eq("user_id", msg.user_id)
+      .eq("message_id", messageId)
+      .is("resolved_at", null)
+      .maybeSingle();
 
-    let clarificationSent = false;
+    let clarifId: string | null = existingClarif?.id ?? null;
+    let alreadyPrompted = !!existingClarif?.reply_sent_at;
+    if (!clarifId) {
+      const { data: newRow, error: clarifErr } = await supabase.from("pending_clarifications").insert({
+        user_id: msg.user_id,
+        message_id: messageId,
+        delivery_id: delivery.id,
+        raw_text: text,
+      }).select("id").single();
+      if (clarifErr) throw clarifErr;
+      clarifId = newRow.id;
+    }
+
+    // Dedup: don't re-send the same initial prompt for the same message.
+    let clarificationSent = alreadyPrompted;
     let waError: string | null = null;
-    if (!clarifErr && msg.sender_phone) {
-      const send = await sendWhatsAppMessage(msg.sender_phone, buildClarificationMessage(text));
+    if (!alreadyPrompted && msg.sender_phone) {
+      const suggestions = await suggestSimilarClients(supabase, msg.user_id, parsed.client_name ?? text);
+      const send = await sendWhatsAppMessage(
+        msg.sender_phone,
+        buildClarificationMessage(text, suggestions),
+        {
+          fromPhone: businessPhone,
+          supabase,
+          userId: msg.user_id,
+          incomingMessageId: messageId,
+          replyType: "clarification_prompt",
+        },
+      );
       clarificationSent = send.ok;
       waError = send.ok ? null : (send.error ?? "שליחת WhatsApp נכשלה");
-    } else if (clarifErr) {
-      waError = clarifErr.message;
+      if (send.ok && clarifId) {
+        await supabase.from("pending_clarifications").update({
+          reply_sent_at: new Date().toISOString(),
+          reply_type: "initial",
+        }).eq("id", clarifId);
+      }
     }
 
     if (clarificationSent) {
       await supabase.from("incoming_messages").update({
-        status: "missing_client",
+        status: "awaiting_clarification",
         error_detail: "ממתין להבהרה דרך WhatsApp",
         processed_at: new Date().toISOString(),
       }).eq("id", messageId);
-      return { ok: true, status: "missing_client", deliveryId: delivery.id };
+      return { ok: true, status: "awaiting_clarification", deliveryId: delivery.id };
     }
 
-    // Fallback: write to misc immediately so data is never lost.
-    await supabase.from("deliveries").update({ write_status: "pending" }).eq("id", delivery.id);
-    await writeDeliveryToClientSheet(supabase, {
-      deliveryId: delivery.id,
-      messageId,
-      userId: msg.user_id,
-      clientId,
-      delivery_date: deliveryDate,
-      description: parsed.description,
-      contact_ordered_by: parsed.contact_ordered_by,
-      notes: parsed.notes,
-      price: parsed.price,
-    });
-    const errDetail = `שובץ ל"מזדמנים" — לא זוהה לקוח. שליחת הבהרה ב-WhatsApp נכשלה: ${waError ?? "לא ידוע"}`;
+    // Could not reach WhatsApp → keep awaiting_clarification, do NOT write to sheet yet.
+    const errDetail = `לא זוהה לקוח. שליחת הבהרה ב-WhatsApp נכשלה: ${waError ?? "לא ידוע"}`;
     await supabase.from("incoming_messages").update({
-      status: "missing_client", error_detail: errDetail, processed_at: new Date().toISOString(),
+      status: "awaiting_clarification", error_detail: errDetail, processed_at: new Date().toISOString(),
     }).eq("id", messageId);
     await supabase.from("processing_errors").insert({
       message_id: messageId, user_id: msg.user_id,
-      error_type: "missing_client",
+      error_type: "clarification_send_failed",
       error_description: errDetail,
     });
-    return { ok: true, status: "missing_client", deliveryId: delivery.id };
+    return { ok: true, status: "awaiting_clarification", deliveryId: delivery.id };
   } catch (e: any) {
     const reason = e?.message ?? "שגיאה לא ידועה";
     await supabase.from("incoming_messages").update({
