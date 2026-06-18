@@ -87,38 +87,52 @@ async function resolveClientId(
   supabase: DB,
   userId: string,
   clientName: string | null,
+  rawText: string,
 ): Promise<{ clientId: string; matched: boolean }> {
+  // Load all aliases + clients up-front (used by both AI-name match and raw-text scan)
+  const { data: aliases } = await supabase
+    .from("client_aliases")
+    .select("client_id, alias")
+    .eq("user_id", userId);
+  const { data: clients } = await supabase
+    .from("clients")
+    .select("id, client_name, is_miscellaneous, is_archived")
+    .eq("user_id", userId)
+    .eq("is_archived", false);
+
+  const activeClients = clients ?? [];
+  const allAliases = aliases ?? [];
+
   if (clientName) {
     const norm = normalize(clientName);
-
-    // 1. alias match
-    const { data: aliases } = await supabase
-      .from("client_aliases")
-      .select("client_id, alias")
-      .eq("user_id", userId);
-    const aliasHit = (aliases ?? []).find((a) => normalize(a.alias) === norm);
+    const aliasHit = allAliases.find((a) => normalize(a.alias) === norm);
     if (aliasHit) return { clientId: aliasHit.client_id, matched: true };
-
-    // 2. client name match
-    const { data: clients } = await supabase
-      .from("clients")
-      .select("id, client_name, is_miscellaneous")
-      .eq("user_id", userId)
-      .eq("is_archived", false);
-    const nameHit = (clients ?? []).find((c) => normalize(c.client_name) === norm);
+    const nameHit = activeClients.find((c) => normalize(c.client_name) === norm);
     if (nameHit) return { clientId: nameHit.id, matched: true };
   }
 
-  // 3. fallback to "מזדמנים"
-  const { data: misc } = await supabase
-    .from("clients")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("is_miscellaneous", true)
-    .maybeSingle();
+  // Fallback: scan the raw message text for any alias or client name (whole-word match)
+  const normText = ` ${normalize(rawText)} `;
+  const candidates = new Set<string>();
+  for (const a of allAliases) {
+    const n = normalize(a.alias);
+    if (n && normText.includes(` ${n} `)) candidates.add(a.client_id);
+  }
+  for (const c of activeClients) {
+    if (c.is_miscellaneous) continue;
+    const n = normalize(c.client_name);
+    if (n && normText.includes(` ${n} `)) candidates.add(c.id);
+  }
+  if (candidates.size === 1) {
+    return { clientId: [...candidates][0], matched: true };
+  }
+
+  // Fallback to "מזדמנים"
+  const misc = activeClients.find((c) => c.is_miscellaneous);
   if (!misc) throw new Error('לא נמצא לקוח "מזדמנים" עבור המשתמש');
   return { clientId: misc.id, matched: false };
 }
+
 
 export interface ProcessResult {
   ok: boolean;
@@ -165,7 +179,7 @@ export async function processIncomingMessage(
 
   try {
     const parsed = await callLovableAI(text);
-    const { clientId, matched } = await resolveClientId(supabase, msg.user_id, parsed.client_name);
+    const { clientId, matched } = await resolveClientId(supabase, msg.user_id, parsed.client_name, text);
 
     const deliveryDate = parsed.delivery_date ?? new Date().toISOString().slice(0, 10);
 
