@@ -2,11 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listErrors, resolveError } from "@/lib/errors.functions";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Check, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Check, ShieldCheck, FileText } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/errors")({
   component: ErrorsPage,
@@ -53,6 +55,7 @@ function ErrorsPage() {
   });
 
   const openCount = (data ?? []).filter((e) => !e.resolved_at).length;
+  const [details, setDetails] = useState<ProcessingError | null>(null);
 
   function StatusBadge({ resolved }: { resolved: boolean }) {
     if (resolved) {
@@ -110,8 +113,6 @@ function ErrorsPage() {
                 <TableRow className="bg-muted/40">
                   <TableHead className="text-right">תאריך</TableHead>
                   <TableHead className="text-right">סוג</TableHead>
-                  <TableHead className="text-right">תיאור</TableHead>
-                  <TableHead className="text-right">הודעה מקורית</TableHead>
                   <TableHead className="text-right">שולח</TableHead>
                   <TableHead className="text-right">סטטוס</TableHead>
                   <TableHead className="text-right">פעולות</TableHead>
@@ -120,7 +121,6 @@ function ErrorsPage() {
               <TableBody>
                 {data?.map((e) => {
                   const msg = e.incoming_messages;
-                  const msgText = msg?.transcribed_text || msg?.raw_text || "";
                   return (
                     <TableRow key={e.id} className="hover:bg-muted/30">
                       <TableCell className="whitespace-nowrap text-xs">
@@ -131,19 +131,6 @@ function ErrorsPage() {
                           {typeLabel(e.error_type)}
                         </span>
                       </TableCell>
-                      <TableCell className="max-w-xs text-sm">{e.error_description || "—"}</TableCell>
-                      <TableCell className="max-w-sm">
-                        {msgText ? (
-                          <div
-                            className="line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground"
-                            title={msgText}
-                          >
-                            {msgText}
-                          </div>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
                       <TableCell className="whitespace-nowrap text-xs" dir="ltr">
                         {msg?.sender_phone ?? "—"}
                       </TableCell>
@@ -151,12 +138,18 @@ function ErrorsPage() {
                         <StatusBadge resolved={!!e.resolved_at} />
                       </TableCell>
                       <TableCell>
-                        {!e.resolved_at && (
-                          <Button size="sm" variant="outline" onClick={() => mut.mutate(e.id)}>
-                            <Check className="ml-1.5 h-4 w-4" />
-                            סמן כטופל
+                        <div className="flex items-center gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => setDetails(e)}>
+                            <FileText className="ml-1.5 h-4 w-4" />
+                            פרטים
                           </Button>
-                        )}
+                          {!e.resolved_at && (
+                            <Button size="sm" variant="outline" onClick={() => mut.mutate(e.id)}>
+                              <Check className="ml-1.5 h-4 w-4" />
+                              סמן כטופל
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -169,7 +162,6 @@ function ErrorsPage() {
           <div className="space-y-3 md:hidden">
             {data?.map((e) => {
               const msg = e.incoming_messages;
-              const msgText = msg?.transcribed_text || msg?.raw_text || "";
               return (
                 <Card key={e.id} className="p-4">
                   <div className="mb-2 flex items-center justify-between gap-2">
@@ -179,33 +171,64 @@ function ErrorsPage() {
                     <StatusBadge resolved={!!e.resolved_at} />
                   </div>
 
-                  {e.error_description && <p className="mb-2 text-sm">{e.error_description}</p>}
-
-                  {msgText && (
-                    <p className="mb-2 whitespace-pre-wrap rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                      {msgText}
-                    </p>
-                  )}
-
                   <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     {msg?.sender_phone && <span dir="ltr">{msg.sender_phone}</span>}
                     <span>{new Date(e.created_at).toLocaleString("he-IL")}</span>
                   </div>
 
-                  {!e.resolved_at && (
-                    <div className="border-t pt-3">
-                      <Button size="sm" variant="outline" className="w-full" onClick={() => mut.mutate(e.id)}>
+                  <div className="flex gap-2 border-t pt-3">
+                    <Button size="sm" variant="outline" className="flex-1" onClick={() => setDetails(e)}>
+                      <FileText className="ml-1.5 h-4 w-4" />
+                      פרטים
+                    </Button>
+                    {!e.resolved_at && (
+                      <Button size="sm" variant="outline" className="flex-1" onClick={() => mut.mutate(e.id)}>
                         <Check className="ml-1.5 h-4 w-4" />
                         סמן כטופל
                       </Button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </Card>
               );
             })}
           </div>
         </>
       )}
+
+      {/* Details dialog */}
+      <Dialog open={!!details} onOpenChange={(o) => !o && setDetails(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>פרטי השגיאה</DialogTitle>
+          </DialogHeader>
+          {details && (
+            <div className="space-y-4">
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">סוג</p>
+                <span className="rounded-md bg-muted px-2 py-0.5 text-sm font-medium">
+                  {typeLabel(details.error_type)}
+                </span>
+              </div>
+              {details.error_description && (
+                <div>
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">תיאור טכני</p>
+                  <p className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                    {details.error_description}
+                  </p>
+                </div>
+              )}
+              {(details.incoming_messages?.transcribed_text || details.incoming_messages?.raw_text) && (
+                <div>
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">הודעה מקורית</p>
+                  <p className="whitespace-pre-wrap rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                    {details.incoming_messages.transcribed_text || details.incoming_messages.raw_text}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
