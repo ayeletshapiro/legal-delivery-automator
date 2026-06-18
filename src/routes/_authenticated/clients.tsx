@@ -207,7 +207,7 @@ function ClientsPage() {
                         size="sm"
                         onClick={() => archiveMut.mutate({ id: c.id, archive: !c.is_archived })}
                       >
-                        {c.is_archived ? "שחזר" : "ארכב"}
+                        {c.is_archived ? "שחזר" : "לארכיון"}
                       </Button>
                     )}
                   </TableCell>
