@@ -28,6 +28,8 @@ const statusLabels: Record<string, string> = {
   missing_details: "חסרים פרטים",
   transcription_failed: "תמלול נכשל",
   ignored: "התעלם",
+  awaiting_clarification: "ממתין להבהרה",
+  cancelled: "בוטל",
 };
 
 const typeLabels: Record<string, string> = {
