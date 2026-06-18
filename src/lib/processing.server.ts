@@ -487,7 +487,7 @@ async function callLovableAI(rawText: string): Promise<ParsedDelivery> {
       authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
+      model: process.env.AI_EXTRACTION_MODEL || "google/gemini-2.5-pro",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
