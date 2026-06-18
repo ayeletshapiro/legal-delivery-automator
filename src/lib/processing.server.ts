@@ -200,6 +200,48 @@ export async function processIncomingMessage(
     }).select("id").single();
     if (delErr) throw delErr;
 
+    // Attempt to write to the client's Google Sheet (only if client matched, has price, and has a sheet id)
+    let writeStatus: string = "pending";
+    let writeError: string | null = null;
+    if (matched && parsed.price != null) {
+      const { data: clientRow } = await supabase
+        .from("clients")
+        .select("google_sheet_id")
+        .eq("id", clientId)
+        .maybeSingle();
+      const sheetId = clientRow?.google_sheet_id?.trim();
+      if (!sheetId) {
+        writeStatus = "ללא גיליון";
+      } else {
+        const result = await appendDeliveryToSheet(sheetId, {
+          delivery_date: deliveryDate,
+          description: parsed.description,
+          contact_ordered_by: parsed.contact_ordered_by,
+          notes: parsed.notes,
+          price: parsed.price,
+        });
+        if (result.ok) {
+          writeStatus = "נכתב";
+        } else {
+          writeStatus = "שגיאה";
+          writeError = result.error ?? "שגיאה לא ידועה";
+        }
+      }
+      await supabase.from("deliveries").update({
+        write_status: writeStatus,
+        write_error: writeError,
+        written_at: writeStatus === "נכתב" ? new Date().toISOString() : null,
+      }).eq("id", delivery.id);
+
+      if (writeStatus === "שגיאה" && writeError) {
+        await supabase.from("processing_errors").insert({
+          message_id: messageId, user_id: msg.user_id,
+          error_type: "sheet_write_failed",
+          error_description: `כשל בכתיבה לגיליון: ${writeError}`,
+        });
+      }
+    }
+
     const finalStatus = matched ? "done" : "missing_client";
     const errDetail = matched ? null : `שובץ ל"מזדמנים" — לא זוהה לקוח מתוך: ${parsed.client_name ?? "(ריק)"}`;
     await supabase.from("incoming_messages").update({
