@@ -260,6 +260,24 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
               error_type: "transcription_failed",
               error_description: reason,
             });
+            // Tell the courier in Hebrew so the delivery isn't silently lost.
+            try {
+              const { sendWhatsAppMessage } = await import("@/lib/twilio.server");
+              const businessPhone = stripWhatsAppPrefix(params["To"] ?? "");
+              await sendWhatsAppMessage(
+                senderPhone,
+                "❗ לא הצלחתי לתמלל את ההודעה הקולית. אפשר/י לשלוח שוב כטקסט?",
+                {
+                  fromPhone: businessPhone,
+                  supabase: supabaseAdmin,
+                  userId: profile?.id ?? null,
+                  incomingMessageId: inserted.id,
+                  replyType: "transcription_failed",
+                },
+              );
+            } catch (notifyErr) {
+              console.error("[twilio-webhook] transcription failure notify error", notifyErr);
+            }
           }
         }
 

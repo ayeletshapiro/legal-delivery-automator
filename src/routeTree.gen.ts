@@ -21,7 +21,6 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedClientsRouteImport } from './routes/_authenticated/clients'
 import { Route as AuthenticatedClarificationsRouteImport } from './routes/_authenticated/clarifications'
 import { Route as AuthenticatedAliasesRouteImport } from './routes/_authenticated/aliases'
-import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp-webhook'
 import { Route as ApiPublicTwilioWebhookRouteImport } from './routes/api/public/twilio-webhook'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -84,12 +83,6 @@ const AuthenticatedAliasesRoute = AuthenticatedAliasesRouteImport.update({
   path: '/aliases',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const ApiPublicWhatsappWebhookRoute =
-  ApiPublicWhatsappWebhookRouteImport.update({
-    id: '/api/public/whatsapp-webhook',
-    path: '/api/public/whatsapp-webhook',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiPublicTwilioWebhookRoute = ApiPublicTwilioWebhookRouteImport.update({
   id: '/api/public/twilio-webhook',
   path: '/api/public/twilio-webhook',
@@ -109,7 +102,6 @@ export interface FileRoutesByFullPath {
   '/messages': typeof AuthenticatedMessagesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/public/twilio-webhook': typeof ApiPublicTwilioWebhookRoute
-  '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -124,7 +116,6 @@ export interface FileRoutesByTo {
   '/messages': typeof AuthenticatedMessagesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/public/twilio-webhook': typeof ApiPublicTwilioWebhookRoute
-  '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -141,7 +132,6 @@ export interface FileRoutesById {
   '/_authenticated/messages': typeof AuthenticatedMessagesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/api/public/twilio-webhook': typeof ApiPublicTwilioWebhookRoute
-  '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -158,7 +148,6 @@ export interface FileRouteTypes {
     | '/messages'
     | '/settings'
     | '/api/public/twilio-webhook'
-    | '/api/public/whatsapp-webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -173,7 +162,6 @@ export interface FileRouteTypes {
     | '/messages'
     | '/settings'
     | '/api/public/twilio-webhook'
-    | '/api/public/whatsapp-webhook'
   id:
     | '__root__'
     | '/'
@@ -189,7 +177,6 @@ export interface FileRouteTypes {
     | '/_authenticated/messages'
     | '/_authenticated/settings'
     | '/api/public/twilio-webhook'
-    | '/api/public/whatsapp-webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -198,7 +185,6 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   ApiPublicTwilioWebhookRoute: typeof ApiPublicTwilioWebhookRoute
-  ApiPublicWhatsappWebhookRoute: typeof ApiPublicWhatsappWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -287,13 +273,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAliasesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/api/public/whatsapp-webhook': {
-      id: '/api/public/whatsapp-webhook'
-      path: '/api/public/whatsapp-webhook'
-      fullPath: '/api/public/whatsapp-webhook'
-      preLoaderRoute: typeof ApiPublicWhatsappWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/twilio-webhook': {
       id: '/api/public/twilio-webhook'
       path: '/api/public/twilio-webhook'
@@ -335,7 +314,6 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   ApiPublicTwilioWebhookRoute: ApiPublicTwilioWebhookRoute,
-  ApiPublicWhatsappWebhookRoute: ApiPublicWhatsappWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
