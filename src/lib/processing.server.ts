@@ -267,6 +267,36 @@ export async function processIncomingMessage(
 
     const deliveryDate = parsed.delivery_date ?? new Date().toISOString().slice(0, 10);
 
+    const { data: existingDelivery, error: existingErr } = await supabase
+      .from("deliveries")
+      .select("id, message_id, user_id, client_id, delivery_date, description, contact_ordered_by, notes, price, write_status")
+      .eq("message_id", messageId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingErr) throw existingErr;
+    if (existingDelivery) {
+      if (matched && existingDelivery.price != null && existingDelivery.write_status !== "נכתב") {
+        await writeDeliveryToClientSheet(supabase, {
+          deliveryId: existingDelivery.id,
+          messageId: existingDelivery.message_id,
+          userId: existingDelivery.user_id,
+          clientId: existingDelivery.client_id,
+          delivery_date: existingDelivery.delivery_date,
+          description: existingDelivery.description,
+          contact_ordered_by: existingDelivery.contact_ordered_by,
+          notes: existingDelivery.notes,
+          price: existingDelivery.price,
+        });
+      }
+      await supabase.from("incoming_messages").update({
+        status: matched ? "done" : "missing_client",
+        error_detail: matched ? null : `שובץ ל"מזדמנים" — לא זוהה לקוח מתוך: ${parsed.client_name ?? "(ריק)"}`,
+        processed_at: new Date().toISOString(),
+      }).eq("id", messageId);
+      return { ok: true, status: matched ? "done" : "missing_client", deliveryId: existingDelivery.id };
+    }
+
     const { data: delivery, error: delErr } = await supabase.from("deliveries").insert({
       message_id: messageId,
       client_id: clientId,
