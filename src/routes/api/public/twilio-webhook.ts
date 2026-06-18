@@ -118,16 +118,31 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
         // Auto-process text messages from known users.
         if (inserted && profile?.id && messageType === "text" && rawText) {
           try {
+            const businessPhone = stripWhatsAppPrefix(params["To"] ?? "");
             const { tryHandleClarificationReply, processIncomingMessage } = await import("@/lib/processing.server");
-            const handled = await tryHandleClarificationReply(supabaseAdmin, profile.id, senderPhone, rawText);
-            if (handled) {
+            const outcome = await tryHandleClarificationReply(
+              supabaseAdmin, profile.id, senderPhone, rawText, businessPhone, inserted.id,
+            );
+            if (outcome.kind === "resolved") {
               await supabaseAdmin.from("incoming_messages").update({
                 status: "done",
-                error_detail: "תשובת הבהרה לבירור לקוח",
+                error_detail: "תשובת הבהרה — שויך לקוח ונכתב לגיליון",
+                processed_at: new Date().toISOString(),
+              }).eq("id", inserted.id);
+            } else if (outcome.kind === "reprompted") {
+              await supabaseAdmin.from("incoming_messages").update({
+                status: "awaiting_clarification",
+                error_detail: "ממתין להבהרה — נשלחה בקשה חוזרת",
+                processed_at: new Date().toISOString(),
+              }).eq("id", inserted.id);
+            } else if (outcome.kind === "cancelled") {
+              await supabaseAdmin.from("incoming_messages").update({
+                status: "cancelled",
+                error_detail: "המשתמש ביטל את הבירור",
                 processed_at: new Date().toISOString(),
               }).eq("id", inserted.id);
             } else {
-              await processIncomingMessage(supabaseAdmin, inserted.id);
+              await processIncomingMessage(supabaseAdmin, inserted.id, businessPhone);
             }
           } catch (e) {
             console.error("[twilio-webhook] auto-process error", e);
