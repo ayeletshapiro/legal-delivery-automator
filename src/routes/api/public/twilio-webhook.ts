@@ -122,9 +122,99 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
             await processIncomingMessage(supabaseAdmin, inserted.id);
           } catch (e) {
             console.error("[twilio-webhook] auto-process error", e);
-            // status/error_detail were already set by the processor's catch block
           }
         }
+
+        // Audio: download + transcribe via Lovable AI, then process like text.
+        if (inserted && messageType === "audio" && numMedia > 0) {
+          const mediaUrl = params["MediaUrl0"];
+          const mediaContentType = (params["MediaContentType0"] ?? "audio/ogg").toLowerCase();
+          const accountSid = params["AccountSid"];
+          try {
+            if (!mediaUrl) throw new Error("MediaUrl0 חסר");
+            if (!accountSid) throw new Error("AccountSid חסר");
+            const lovableKey = process.env.LOVABLE_API_KEY;
+            if (!lovableKey) throw new Error("LOVABLE_API_KEY לא מוגדר");
+
+            // 1) Download audio from Twilio with Basic Auth
+            const basic = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+            const mediaResp = await fetch(mediaUrl, {
+              headers: { Authorization: `Basic ${basic}` },
+              redirect: "follow",
+            });
+            if (!mediaResp.ok) {
+              const t = await mediaResp.text().catch(() => "");
+              throw new Error(`הורדת מדיה מטוויליו נכשלה ${mediaResp.status}: ${t.slice(0, 200)}`);
+            }
+            const audioBuf = await mediaResp.arrayBuffer();
+
+            // 2) Transcribe via Lovable AI
+            const extMap: Record<string, string> = {
+              "audio/ogg": "ogg",
+              "audio/opus": "ogg",
+              "audio/mpeg": "mp3",
+              "audio/mp3": "mp3",
+              "audio/mp4": "mp4",
+              "audio/m4a": "m4a",
+              "audio/x-m4a": "m4a",
+              "audio/wav": "wav",
+              "audio/x-wav": "wav",
+              "audio/webm": "webm",
+              "audio/aac": "aac",
+              "audio/flac": "flac",
+            };
+            const baseType = mediaContentType.split(";")[0].trim();
+            const ext = extMap[baseType] ?? "ogg";
+            const filename = `recording.${ext}`;
+
+            const fd = new FormData();
+            fd.append("file", new Blob([audioBuf], { type: baseType }), filename);
+            fd.append("model", "openai/gpt-4o-mini-transcribe");
+            fd.append("language", "he");
+
+            const sttResp = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${lovableKey}` },
+              body: fd,
+            });
+            if (!sttResp.ok) {
+              const t = await sttResp.text().catch(() => "");
+              throw new Error(`תמלול נכשל ${sttResp.status}: ${t.slice(0, 300)}`);
+            }
+            const sttJson = await sttResp.json();
+            const transcript: string = (sttJson?.text ?? "").toString().trim();
+            if (!transcript) throw new Error("התמלול חזר ריק");
+
+            await supabaseAdmin
+              .from("incoming_messages")
+              .update({ transcribed_text: transcript })
+              .eq("id", inserted.id);
+
+            if (profile?.id) {
+              try {
+                const { processIncomingMessage } = await import("@/lib/processing.server");
+                await processIncomingMessage(supabaseAdmin, inserted.id);
+              } catch (e) {
+                console.error("[twilio-webhook] audio auto-process error", e);
+              }
+            }
+          } catch (e) {
+            const reason = e instanceof Error ? e.message : "שגיאה לא ידועה בתמלול";
+            console.error("[twilio-webhook] transcription error", reason);
+            await supabaseAdmin.from("incoming_messages").update({
+              status: "transcription_failed",
+              error_detail: reason,
+              processed_at: new Date().toISOString(),
+            }).eq("id", inserted.id);
+            await supabaseAdmin.from("processing_errors").insert({
+              message_id: inserted.id,
+              user_id: profile?.id ?? null,
+              error_type: "transcription_failed",
+              error_description: reason,
+            });
+          }
+        }
+
 
         // Twilio expects TwiML or empty 200. Return empty TwiML.
         return new Response("<Response/>", {

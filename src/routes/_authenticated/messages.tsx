@@ -125,7 +125,8 @@ function MessagesPage() {
                   <TableCell className="max-w-md truncate">{m.transcribed_text || m.raw_text || (m.media_received ? "(מדיה)" : "—")}</TableCell>
                   <TableCell><Badge variant="secondary">{statusLabels[m.status] ?? m.status}</Badge></TableCell>
                   <TableCell>
-                    {(m.message_type === "text") && (m.raw_text || m.transcribed_text) && (
+                    {((m.message_type === "text" && (m.raw_text || m.transcribed_text)) ||
+                      (m.message_type === "audio" && m.transcribed_text)) && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -135,6 +136,7 @@ function MessagesPage() {
                         {m.status === "done" || m.status === "missing_client" ? "עבד מחדש" : "עבד"}
                       </Button>
                     )}
+
                   </TableCell>
                 </TableRow>
               ))}
