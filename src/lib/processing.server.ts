@@ -7,7 +7,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { appendDeliveryToSheet } from "./sheets.server";
+import { appendDeliveryToSheet, createSheetForClient } from "./sheets.server";
 
 type DB = SupabaseClient<Database>;
 

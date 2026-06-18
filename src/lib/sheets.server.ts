@@ -53,7 +53,28 @@ function formatDate(isoDate: string): string {
   return `${d}/${m}/${y}`;
 }
 
-/** Ensure headers exist in row 1; if not, write them. */
+/** Set the first sheet (sheetId=0) of a spreadsheet to right-to-left. */
+async function setSheetRtl(spreadsheetId: string): Promise<void> {
+  const resp = await gatewayFetch(`/spreadsheets/${spreadsheetId}:batchUpdate`, {
+    method: "POST",
+    body: JSON.stringify({
+      requests: [
+        {
+          updateSheetProperties: {
+            properties: { sheetId: 0, rightToLeft: true },
+            fields: "rightToLeft",
+          },
+        },
+      ],
+    }),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    console.warn(`setSheetRtl ${resp.status}: ${body.slice(0, 200)}`);
+  }
+}
+
+/** Ensure headers exist in row 1; if not, write them and switch sheet to RTL. */
 async function ensureHeaders(spreadsheetId: string): Promise<void> {
   const range = "A1:G1";
   const resp = await gatewayFetch(`/spreadsheets/${spreadsheetId}/values/${range}`);
@@ -77,6 +98,32 @@ async function ensureHeaders(spreadsheetId: string): Promise<void> {
     const body = await putResp.text().catch(() => "");
     throw new Error(`כשל בכתיבת כותרות ${putResp.status}: ${body.slice(0, 300)}`);
   }
+
+  await setSheetRtl(spreadsheetId);
+}
+
+/** Create a new spreadsheet titled for the client, RTL by default. Returns spreadsheetId. */
+export async function createSheetForClient(clientName: string): Promise<string> {
+  const title = `שליחויות - ${clientName}`.slice(0, 100);
+  const resp = await gatewayFetch("/spreadsheets", {
+    method: "POST",
+    body: JSON.stringify({
+      properties: { title, locale: "he_IL" },
+      sheets: [
+        { properties: { sheetId: 0, title: "שליחויות", rightToLeft: true } },
+      ],
+    }),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(`כשל ביצירת גיליון ${resp.status}: ${body.slice(0, 300)}`);
+  }
+  const data = await resp.json();
+  const sheetId = data?.spreadsheetId;
+  if (!sheetId || typeof sheetId !== "string") {
+    throw new Error("יצירת הגיליון הצליחה אך לא הוחזר מזהה");
+  }
+  return sheetId;
 }
 
 export interface SheetWriteResult {
