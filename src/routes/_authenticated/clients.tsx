@@ -76,7 +76,14 @@ function ClientsPage() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [editing, setEditing] = useState<null | { id: string; client_name: string }>(null);
+  const [filter, setFilter] = useState<"active" | "archived" | "all">("active");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const filtered = (data ?? []).filter((c) => {
+    if (filter === "active") return !c.is_archived;
+    if (filter === "archived") return c.is_archived;
+    return true;
+  });
 
   async function handleFile(file: File) {
     try {
