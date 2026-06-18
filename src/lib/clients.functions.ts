@@ -46,7 +46,7 @@ export const updateClient = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    const patch: Record<string, unknown> = { client_name: data.client_name };
+    const patch: { client_name: string; google_sheet_id?: string | null } = { client_name: data.client_name };
     if (data.google_sheet_id !== undefined) patch.google_sheet_id = data.google_sheet_id || null;
     const { error } = await context.supabase
       .from("clients")
