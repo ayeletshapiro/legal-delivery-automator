@@ -38,6 +38,7 @@ function MessagesPage() {
   const qc = useQueryClient();
   const listFn = useServerFn(listMessages);
   const testFn = useServerFn(createTestMessage);
+  const processFn = useServerFn(processMessage);
   const [status, setStatus] = useState<string>("all");
   const { data, isLoading } = useQuery({
     queryKey: ["messages", status],
@@ -52,6 +53,16 @@ function MessagesPage() {
   const testMut = useMutation({
     mutationFn: () => testFn({ data: { sender_phone: sender, message_type: mtype, raw_text: text } }),
     onSuccess: () => { toast.success("הודעת בדיקה נוצרה"); qc.invalidateQueries({ queryKey: ["messages"] }); setOpen(false); setText(""); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const processMut = useMutation({
+    mutationFn: (messageId: string) => processFn({ data: { messageId } }),
+    onSuccess: (res) => {
+      if (res.ok) toast.success(res.status === "done" ? "עובד בהצלחה" : "עובד — שובץ ל\"מזדמנים\"");
+      else toast.error(res.errorMessage ?? "עיבוד נכשל");
+      qc.invalidateQueries({ queryKey: ["messages"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
