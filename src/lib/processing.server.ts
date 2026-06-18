@@ -209,15 +209,10 @@ export async function tryHandleClarificationReply(
     return { kind: "cancelled" };
   }
 
-  // Smart skip: if the new message clearly contains a known client name/alias,
-  // treat it as a new delivery — not a clarification reply.
-  const [{ data: clientsForMatch }, { data: aliasesForMatch }] = await Promise.all([
-    supabase.from("clients").select("id, client_name, is_miscellaneous").eq("user_id", userId).eq("is_archived", false),
-    supabase.from("client_aliases").select("client_id, alias").eq("user_id", userId),
-  ]);
-  if (containsKnownClient(text, clientsForMatch ?? [], aliasesForMatch ?? [])) {
-    return { kind: "not_a_clarification" };
-  }
+  // NOTE: Do NOT smart-skip to processIncomingMessage here. If the reply contains
+  // a known client name/alias, we resolve THIS clarification using that client
+  // and write the ORIGINAL delivery details to Sheets (handled below in mode=name).
+
 
   let mode: "misc" | "create" | "name";
   let nameArg: string | null = null;
