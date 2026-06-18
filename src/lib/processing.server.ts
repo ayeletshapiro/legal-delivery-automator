@@ -281,6 +281,24 @@ export async function processIncomingMessage(
       .maybeSingle();
     if (existingErr) throw existingErr;
     if (existingDelivery) {
+      // On reprocess: if we now resolved a different/real client, re-assign the delivery
+      // to that client so it isn't stuck on the previously-set "מזדמנים".
+      const clientChanged = existingDelivery.client_id !== clientId;
+      if (clientChanged) {
+        const { error: reassignErr } = await supabase
+          .from("deliveries")
+          .update({
+            client_id: clientId,
+            write_status: "pending",
+            write_error: null,
+            written_at: null,
+          })
+          .eq("id", existingDelivery.id);
+        if (reassignErr) throw reassignErr;
+        existingDelivery.client_id = clientId;
+        existingDelivery.write_status = "pending";
+      }
+
       if (matched && existingDelivery.write_status !== "נכתב") {
         await writeDeliveryToClientSheet(supabase, {
           deliveryId: existingDelivery.id,
