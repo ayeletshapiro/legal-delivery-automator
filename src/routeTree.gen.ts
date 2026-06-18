@@ -19,6 +19,7 @@ import { Route as AuthenticatedErrorsRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedDeliveriesRouteImport } from './routes/_authenticated/deliveries'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedClientsRouteImport } from './routes/_authenticated/clients'
+import { Route as AuthenticatedClarificationsRouteImport } from './routes/_authenticated/clarifications'
 import { Route as AuthenticatedAliasesRouteImport } from './routes/_authenticated/aliases'
 import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp-webhook'
 import { Route as ApiPublicTwilioWebhookRouteImport } from './routes/api/public/twilio-webhook'
@@ -72,6 +73,12 @@ const AuthenticatedClientsRoute = AuthenticatedClientsRouteImport.update({
   path: '/clients',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedClarificationsRoute =
+  AuthenticatedClarificationsRouteImport.update({
+    id: '/clarifications',
+    path: '/clarifications',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAliasesRoute = AuthenticatedAliasesRouteImport.update({
   id: '/aliases',
   path: '/aliases',
@@ -94,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
   '/aliases': typeof AuthenticatedAliasesRoute
+  '/clarifications': typeof AuthenticatedClarificationsRoute
   '/clients': typeof AuthenticatedClientsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/deliveries': typeof AuthenticatedDeliveriesRoute
@@ -108,6 +116,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
   '/aliases': typeof AuthenticatedAliasesRoute
+  '/clarifications': typeof AuthenticatedClarificationsRoute
   '/clients': typeof AuthenticatedClientsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/deliveries': typeof AuthenticatedDeliveriesRoute
@@ -124,6 +133,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/aliases': typeof AuthenticatedAliasesRoute
+  '/_authenticated/clarifications': typeof AuthenticatedClarificationsRoute
   '/_authenticated/clients': typeof AuthenticatedClientsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/deliveries': typeof AuthenticatedDeliveriesRoute
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/reset-password'
     | '/aliases'
+    | '/clarifications'
     | '/clients'
     | '/dashboard'
     | '/deliveries'
@@ -154,6 +165,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/reset-password'
     | '/aliases'
+    | '/clarifications'
     | '/clients'
     | '/dashboard'
     | '/deliveries'
@@ -169,6 +181,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/reset-password'
     | '/_authenticated/aliases'
+    | '/_authenticated/clarifications'
     | '/_authenticated/clients'
     | '/_authenticated/dashboard'
     | '/_authenticated/deliveries'
@@ -260,6 +273,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedClientsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/clarifications': {
+      id: '/_authenticated/clarifications'
+      path: '/clarifications'
+      fullPath: '/clarifications'
+      preLoaderRoute: typeof AuthenticatedClarificationsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/aliases': {
       id: '/_authenticated/aliases'
       path: '/aliases'
@@ -286,6 +306,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAliasesRoute: typeof AuthenticatedAliasesRoute
+  AuthenticatedClarificationsRoute: typeof AuthenticatedClarificationsRoute
   AuthenticatedClientsRoute: typeof AuthenticatedClientsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDeliveriesRoute: typeof AuthenticatedDeliveriesRoute
@@ -296,6 +317,7 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAliasesRoute: AuthenticatedAliasesRoute,
+  AuthenticatedClarificationsRoute: AuthenticatedClarificationsRoute,
   AuthenticatedClientsRoute: AuthenticatedClientsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDeliveriesRoute: AuthenticatedDeliveriesRoute,

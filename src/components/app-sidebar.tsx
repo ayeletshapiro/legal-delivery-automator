@@ -1,5 +1,5 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, Tags, MessageSquare, AlertCircle, Settings, LogOut, Truck } from "lucide-react";
+import { LayoutDashboard, Users, Tags, MessageSquare, AlertCircle, Settings, LogOut, Truck, HelpCircle } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
