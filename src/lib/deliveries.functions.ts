@@ -57,9 +57,21 @@ export const updateDelivery = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    const { id, ...patch } = data;
-    const update: Record<string, unknown> = { ...patch };
-    if ("price" in patch) update.price_missing = patch.price == null;
+    const { id, price, ...rest } = data;
+    const update: {
+      client_id?: string;
+      delivery_date?: string;
+      description?: string;
+      notes?: string | null;
+      price?: number | null;
+      price_missing?: boolean;
+      contact_ordered_by?: string | null;
+      write_status?: string;
+    } = { ...rest };
+    if ("price" in data) {
+      update.price = price ?? null;
+      update.price_missing = price == null;
+    }
     const { error } = await context.supabase
       .from("deliveries")
       .update(update)
