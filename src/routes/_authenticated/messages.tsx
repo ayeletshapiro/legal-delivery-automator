@@ -135,7 +135,7 @@ function MessagesPage() {
                         disabled={processMut.isPending}
                         onClick={() => processMut.mutate(m.id)}
                       >
-                        {m.status === "done" || m.status === "missing_client" ? "עבד מחדש" : "עבד"}
+                        {["done","missing_client","awaiting_clarification","cancelled","failed"].includes(m.status) ? "עבד מחדש" : "עבד"}
                       </Button>
                     )}
 
