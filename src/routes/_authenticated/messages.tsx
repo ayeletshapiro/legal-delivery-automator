@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { listMessages, createTestMessage } from "@/lib/messages.functions";
+import { processMessage } from "@/lib/processing.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +38,7 @@ function MessagesPage() {
   const qc = useQueryClient();
   const listFn = useServerFn(listMessages);
   const testFn = useServerFn(createTestMessage);
+  const processFn = useServerFn(processMessage);
   const [status, setStatus] = useState<string>("all");
   const { data, isLoading } = useQuery({
     queryKey: ["messages", status],
@@ -51,6 +53,16 @@ function MessagesPage() {
   const testMut = useMutation({
     mutationFn: () => testFn({ data: { sender_phone: sender, message_type: mtype, raw_text: text } }),
     onSuccess: () => { toast.success("הודעת בדיקה נוצרה"); qc.invalidateQueries({ queryKey: ["messages"] }); setOpen(false); setText(""); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const processMut = useMutation({
+    mutationFn: (messageId: string) => processFn({ data: { messageId } }),
+    onSuccess: (res) => {
+      if (res.ok) toast.success(res.status === "done" ? "עובד בהצלחה" : "עובד — שובץ ל\"מזדמנים\"");
+      else toast.error(res.errorMessage ?? "עיבוד נכשל");
+      qc.invalidateQueries({ queryKey: ["messages"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -101,6 +113,7 @@ function MessagesPage() {
                 <TableHead className="text-right">סוג</TableHead>
                 <TableHead className="text-right">תוכן</TableHead>
                 <TableHead className="text-right">סטטוס</TableHead>
+                <TableHead className="text-right">פעולה</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -111,10 +124,22 @@ function MessagesPage() {
                   <TableCell>{typeLabels[m.message_type]}</TableCell>
                   <TableCell className="max-w-md truncate">{m.transcribed_text || m.raw_text || (m.media_received ? "(מדיה)" : "—")}</TableCell>
                   <TableCell><Badge variant="secondary">{statusLabels[m.status] ?? m.status}</Badge></TableCell>
+                  <TableCell>
+                    {(m.message_type === "text") && (m.raw_text || m.transcribed_text) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={processMut.isPending}
+                        onClick={() => processMut.mutate(m.id)}
+                      >
+                        {m.status === "done" || m.status === "missing_client" ? "עבד מחדש" : "עבד"}
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
               {data?.length === 0 && (
-                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">אין הודעות</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">אין הודעות</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
