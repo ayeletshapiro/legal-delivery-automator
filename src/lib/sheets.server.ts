@@ -6,16 +6,7 @@
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_sheets/v4";
 
-const HEADERS = [
-  "תאריך",
-  "תיאור",
-  "הזמין",
-  "הערות",
-  "מחיר",
-  'סה"כ ללא מע"מ',
-  'סה"כ אחרי מע"מ',
-  "_msg_id",
-];
+const HEADERS = ["תאריך", "תיאור", "הזמין", "הערות", "מחיר", 'סה"כ ללא מע"מ', 'סה"כ אחרי מע"מ', "_msg_id"];
 
 export interface DeliveryRow {
   delivery_date: string; // YYYY-MM-DD
@@ -80,10 +71,9 @@ interface SheetMeta {
 }
 
 async function listSheetTabs(spreadsheetId: string): Promise<SheetMeta[]> {
-  const resp = await gatewayFetch(
-    `/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`,
-    { method: "GET" },
-  );
+  const resp = await gatewayFetch(`/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`, {
+    method: "GET",
+  });
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");
     throw new Error(`קריאת מטא-דאטה של הגיליון נכשלה ${resp.status}: ${body.slice(0, 200)}`);
@@ -114,18 +104,50 @@ async function createMonthlyTab(spreadsheetId: string, title: string): Promise<n
     throw new Error(`יצירת לשונית חודשית נכשלה ${addResp.status}: ${body.slice(0, 200)}`);
   }
   const data = await addResp.json();
-  const newSheetId = Number(
-    data?.replies?.[0]?.addSheet?.properties?.sheetId ?? 0,
-  );
+  const newSheetId = Number(data?.replies?.[0]?.addSheet?.properties?.sheetId ?? 0);
+
+  // Format the new tab: hide the _msg_id column (H) and make the
+  // description column (B) wrap text + be wider so it doesn't overflow.
+  // Column indices are 0-based: A=0 ... B=1 (description) ... H=7 (_msg_id).
+  await gatewayFetch(`/spreadsheets/${spreadsheetId}:batchUpdate`, {
+    method: "POST",
+    body: JSON.stringify({
+      requests: [
+        {
+          // Hide column H (_msg_id) from view — data stays for idempotency.
+          updateDimensionProperties: {
+            range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 7, endIndex: 8 },
+            properties: { hiddenByUser: true },
+            fields: "hiddenByUser",
+          },
+        },
+        {
+          // Widen the description column (B) to ~360px.
+          updateDimensionProperties: {
+            range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 2 },
+            properties: { pixelSize: 360 },
+            fields: "pixelSize",
+          },
+        },
+        {
+          // Wrap text in the description column (B) so long text stays inside the cell.
+          repeatCell: {
+            range: { sheetId: newSheetId, startColumnIndex: 1, endColumnIndex: 2 },
+            cell: { userEnteredFormat: { wrapStrategy: "WRAP" } },
+            fields: "userEnteredFormat.wrapStrategy",
+          },
+        },
+      ],
+    }),
+  }).catch(() => {
+    // Formatting is cosmetic — never fail the whole write because of it.
+  });
 
   const range = `${title}!A1:H1`;
-  const putResp = await gatewayFetch(
-    `/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ range, majorDimension: "ROWS", values: [HEADERS] }),
-    },
-  );
+  const putResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`, {
+    method: "PUT",
+    body: JSON.stringify({ range, majorDimension: "ROWS", values: [HEADERS] }),
+  });
   if (!putResp.ok) {
     const body = await putResp.text().catch(() => "");
     throw new Error(`כתיבת כותרות נכשלה ${putResp.status}: ${body.slice(0, 200)}`);
@@ -193,10 +215,7 @@ export async function appendDeliveryToSheet(
 
     // 2) Idempotency: scan column H for this message_id.
     if (delivery.message_id) {
-      const idResp = await gatewayFetch(
-        `/spreadsheets/${spreadsheetId}/values/${tabName}!H:H`,
-        { method: "GET" },
-      );
+      const idResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}/values/${tabName}!H:H`, { method: "GET" });
       if (idResp.ok) {
         const idData = await idResp.json();
         const values = (idData?.values ?? []) as string[][];
@@ -258,7 +277,7 @@ export async function appendDeliveryToSheet(
       return { ok: false, error: userMsg, sheetName: tabName };
     }
 
-    const appendJson = await appendResp.json().catch(() => ({} as Record<string, unknown>));
+    const appendJson = await appendResp.json().catch(() => ({}) as Record<string, unknown>);
     const updatedRange = (appendJson as { updates?: { updatedRange?: string } })?.updates?.updatedRange;
     return { ok: true, sheetName: tabName, rowNumber: parseRowNumber(updatedRange) };
   } catch (e: unknown) {
