@@ -14,16 +14,317 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      app_config: {
+        Row: {
+          created_at: string
+          id: string
+          updated_at: string
+          user_id: string | null
+          vat_rate: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string | null
+          vat_rate?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string | null
+          vat_rate?: number
+        }
+        Relationships: []
+      }
+      client_aliases: {
+        Row: {
+          alias: string
+          client_id: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          alias: string
+          client_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          alias?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_aliases_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clients: {
+        Row: {
+          client_name: string
+          created_at: string
+          google_sheet_id: string | null
+          id: string
+          is_archived: boolean
+          is_miscellaneous: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_name: string
+          created_at?: string
+          google_sheet_id?: string | null
+          id?: string
+          is_archived?: boolean
+          is_miscellaneous?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_name?: string
+          created_at?: string
+          google_sheet_id?: string | null
+          id?: string
+          is_archived?: boolean
+          is_miscellaneous?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      deliveries: {
+        Row: {
+          client_id: string
+          contact_ordered_by: string | null
+          created_at: string
+          delivery_date: string
+          description: string
+          id: string
+          message_id: string
+          notes: string | null
+          price: number | null
+          price_missing: boolean
+          row_number: number | null
+          sheet_name: string | null
+          user_id: string
+          write_status: string
+        }
+        Insert: {
+          client_id: string
+          contact_ordered_by?: string | null
+          created_at?: string
+          delivery_date: string
+          description: string
+          id?: string
+          message_id: string
+          notes?: string | null
+          price?: number | null
+          price_missing?: boolean
+          row_number?: number | null
+          sheet_name?: string | null
+          user_id: string
+          write_status?: string
+        }
+        Update: {
+          client_id?: string
+          contact_ordered_by?: string | null
+          created_at?: string
+          delivery_date?: string
+          description?: string
+          id?: string
+          message_id?: string
+          notes?: string | null
+          price?: number | null
+          price_missing?: boolean
+          row_number?: number | null
+          sheet_name?: string | null
+          user_id?: string
+          write_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deliveries_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deliveries_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "incoming_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      incoming_messages: {
+        Row: {
+          created_at: string
+          error_detail: string | null
+          id: string
+          media_received: boolean
+          message_type: Database["public"]["Enums"]["message_type"]
+          processed_at: string | null
+          raw_text: string | null
+          sender_phone: string
+          status: Database["public"]["Enums"]["message_status"]
+          transcribed_text: string | null
+          user_id: string | null
+          whatsapp_message_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_detail?: string | null
+          id?: string
+          media_received?: boolean
+          message_type: Database["public"]["Enums"]["message_type"]
+          processed_at?: string | null
+          raw_text?: string | null
+          sender_phone: string
+          status?: Database["public"]["Enums"]["message_status"]
+          transcribed_text?: string | null
+          user_id?: string | null
+          whatsapp_message_id: string
+        }
+        Update: {
+          created_at?: string
+          error_detail?: string | null
+          id?: string
+          media_received?: boolean
+          message_type?: Database["public"]["Enums"]["message_type"]
+          processed_at?: string | null
+          raw_text?: string | null
+          sender_phone?: string
+          status?: Database["public"]["Enums"]["message_status"]
+          transcribed_text?: string | null
+          user_id?: string | null
+          whatsapp_message_id?: string
+        }
+        Relationships: []
+      }
+      processing_errors: {
+        Row: {
+          created_at: string
+          error_description: string | null
+          error_type: string
+          id: string
+          message_id: string | null
+          resolved_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_description?: string | null
+          error_type: string
+          id?: string
+          message_id?: string | null
+          resolved_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_description?: string | null
+          error_type?: string
+          id?: string
+          message_id?: string | null
+          resolved_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "processing_errors_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "incoming_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string
+          full_name: string | null
+          id: string
+          updated_at: string
+          whatsapp_phone: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          full_name?: string | null
+          id: string
+          updated_at?: string
+          whatsapp_phone?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+          whatsapp_phone?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
+      message_status:
+        | "received"
+        | "processing"
+        | "done"
+        | "failed"
+        | "missing_client"
+        | "missing_details"
+        | "transcription_failed"
+        | "ignored"
+      message_type: "text" | "audio" | "image" | "document"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +451,19 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+      message_status: [
+        "received",
+        "processing",
+        "done",
+        "failed",
+        "missing_client",
+        "missing_details",
+        "transcription_failed",
+        "ignored",
+      ],
+      message_type: ["text", "audio", "image", "document"],
+    },
   },
 } as const
