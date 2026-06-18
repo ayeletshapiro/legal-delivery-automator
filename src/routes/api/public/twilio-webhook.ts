@@ -118,8 +118,17 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
         // Auto-process text messages from known users.
         if (inserted && profile?.id && messageType === "text" && rawText) {
           try {
-            const { processIncomingMessage } = await import("@/lib/processing.server");
-            await processIncomingMessage(supabaseAdmin, inserted.id);
+            const { tryHandleClarificationReply, processIncomingMessage } = await import("@/lib/processing.server");
+            const handled = await tryHandleClarificationReply(supabaseAdmin, profile.id, senderPhone, rawText);
+            if (handled) {
+              await supabaseAdmin.from("incoming_messages").update({
+                status: "done",
+                error_detail: "תשובת הבהרה לבירור לקוח",
+                processed_at: new Date().toISOString(),
+              }).eq("id", inserted.id);
+            } else {
+              await processIncomingMessage(supabaseAdmin, inserted.id);
+            }
           } catch (e) {
             console.error("[twilio-webhook] auto-process error", e);
           }
