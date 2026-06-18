@@ -1,6 +1,7 @@
 /**
  * Google Sheets writer. Server-only.
- * Appends delivery rows to a client's spreadsheet via the Lovable connector gateway.
+ * Writes delivery rows to a per-client spreadsheet, organized by monthly tabs (MM.YYYY).
+ * Uses a hidden column H (_msg_id) on each monthly tab as the idempotency marker.
  */
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_sheets/v4";
@@ -13,9 +14,8 @@ const HEADERS = [
   "מחיר",
   'סה"כ ללא מע"מ',
   'סה"כ אחרי מע"מ',
+  "_msg_id",
 ];
-
-const VAT_RATE = 0.18;
 
 export interface DeliveryRow {
   delivery_date: string; // YYYY-MM-DD
@@ -23,6 +23,10 @@ export interface DeliveryRow {
   contact_ordered_by: string | null;
   notes: string | null;
   price: number | null;
+  /** When true, compute the VAT split columns. When false, mirror price (no VAT inflation). */
+  vat_explicit?: boolean;
+  /** Idempotency marker written into column H (_msg_id). */
+  message_id?: string | null;
 }
 
 function authHeaders() {
@@ -38,8 +42,7 @@ function authHeaders() {
 }
 
 async function gatewayFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const url = `${GATEWAY_URL}${path}`;
-  const resp = await fetch(url, {
+  const resp = await fetch(`${GATEWAY_URL}${path}`, {
     ...init,
     headers: { ...authHeaders(), ...(init.headers || {}) },
   });
@@ -53,30 +56,69 @@ function formatDate(isoDate: string): string {
   return `${d}/${m}/${y}`;
 }
 
-/** Set the first sheet (sheetId=0) of a spreadsheet to right-to-left. */
-async function setSheetRtl(spreadsheetId: string): Promise<void> {
-  const resp = await gatewayFetch(`/spreadsheets/${spreadsheetId}:batchUpdate`, {
+/** Return monthly tab name (MM.YYYY) derived from a YYYY-MM-DD delivery date. */
+export function monthlyTabName(isoDate: string): string {
+  const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(isoDate);
+  if (!m) {
+    // Fallback to Asia/Jerusalem "now"
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jerusalem",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const y = parts.find((p) => p.type === "year")!.value;
+    const mo = parts.find((p) => p.type === "month")!.value;
+    return `${mo}.${y}`;
+  }
+  return `${m[2]}.${m[1]}`;
+}
+
+interface SheetMeta {
+  sheetId: number;
+  title: string;
+}
+
+async function listSheetTabs(spreadsheetId: string): Promise<SheetMeta[]> {
+  const resp = await gatewayFetch(
+    `/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`,
+    { method: "GET" },
+  );
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(`קריאת מטא-דאטה של הגיליון נכשלה ${resp.status}: ${body.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  const sheets = (data?.sheets ?? []) as Array<{ properties?: { sheetId?: number; title?: string } }>;
+  return sheets
+    .map((s) => ({ sheetId: Number(s.properties?.sheetId ?? 0), title: String(s.properties?.title ?? "") }))
+    .filter((s) => s.title);
+}
+
+/** Create the monthly tab (RTL) and write the header row. Returns the new sheetId. */
+async function createMonthlyTab(spreadsheetId: string, title: string): Promise<number> {
+  const addResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}:batchUpdate`, {
     method: "POST",
     body: JSON.stringify({
       requests: [
         {
-          updateSheetProperties: {
-            properties: { sheetId: 0, rightToLeft: true },
-            fields: "rightToLeft",
+          addSheet: {
+            properties: { title, rightToLeft: true },
           },
         },
       ],
     }),
   });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    console.warn(`setSheetRtl ${resp.status}: ${body.slice(0, 200)}`);
+  if (!addResp.ok) {
+    const body = await addResp.text().catch(() => "");
+    throw new Error(`יצירת לשונית חודשית נכשלה ${addResp.status}: ${body.slice(0, 200)}`);
   }
-}
+  const data = await addResp.json();
+  const newSheetId = Number(
+    data?.replies?.[0]?.addSheet?.properties?.sheetId ?? 0,
+  );
 
-/** Write headers to row 1 and switch sheet to RTL without a pre-read to avoid Sheets read quota. */
-async function ensureHeaders(spreadsheetId: string): Promise<void> {
-  const range = "A1:G1";
+  const range = `${title}!A1:H1`;
   const putResp = await gatewayFetch(
     `/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
     {
@@ -86,22 +128,18 @@ async function ensureHeaders(spreadsheetId: string): Promise<void> {
   );
   if (!putResp.ok) {
     const body = await putResp.text().catch(() => "");
-    throw new Error(`כשל בכתיבת כותרות ${putResp.status}: ${body.slice(0, 300)}`);
+    throw new Error(`כתיבת כותרות נכשלה ${putResp.status}: ${body.slice(0, 200)}`);
   }
-
-  await setSheetRtl(spreadsheetId);
+  return newSheetId;
 }
 
-/** Create a new spreadsheet titled for the client, RTL by default. Returns spreadsheetId. */
+/** Create a new spreadsheet titled for the client. The first monthly tab is created lazily on append. */
 export async function createSheetForClient(clientName: string): Promise<string> {
   const title = clientName.slice(0, 100);
   const resp = await gatewayFetch("/spreadsheets", {
     method: "POST",
     body: JSON.stringify({
       properties: { title, locale: "iw_IL" },
-      sheets: [
-        { properties: { sheetId: 0, title: "שליחויות", rightToLeft: true } },
-      ],
     }),
   });
   if (!resp.ok) {
@@ -119,23 +157,74 @@ export async function createSheetForClient(clientName: string): Promise<string> 
 export interface SheetWriteResult {
   ok: boolean;
   error?: string;
+  /** Tab the row was written to (or would have been written to). */
+  sheetName?: string;
+  /** 1-based row number on that tab. */
+  rowNumber?: number;
+  /** True when the append was skipped because the message_id was already present. */
+  duplicate?: boolean;
+}
+
+/** Parse a Sheets append response's updatedRange (e.g. "06.2026!A7:H7") into a row number. */
+function parseRowNumber(updatedRange: string | undefined): number | undefined {
+  if (!updatedRange) return undefined;
+  const m = /![A-Z]+(\d+):[A-Z]+\d+$/.exec(updatedRange) ?? /![A-Z]+(\d+)$/.exec(updatedRange);
+  return m ? Number(m[1]) : undefined;
 }
 
 export async function appendDeliveryToSheet(
   spreadsheetId: string,
   delivery: DeliveryRow,
+  vatRate: number,
 ): Promise<SheetWriteResult> {
   try {
     if (!spreadsheetId || !spreadsheetId.trim()) {
       return { ok: false, error: "לא הוגדר מזהה גיליון" };
     }
 
-    await ensureHeaders(spreadsheetId);
+    const tabName = monthlyTabName(delivery.delivery_date);
 
+    // 1) Ensure the monthly tab exists; only write headers when first created.
+    const tabs = await listSheetTabs(spreadsheetId);
+    const existing = tabs.find((t) => t.title === tabName);
+    if (!existing) {
+      await createMonthlyTab(spreadsheetId, tabName);
+    }
+
+    // 2) Idempotency: scan column H for this message_id.
+    if (delivery.message_id) {
+      const idResp = await gatewayFetch(
+        `/spreadsheets/${spreadsheetId}/values/${tabName}!H:H`,
+        { method: "GET" },
+      );
+      if (idResp.ok) {
+        const idData = await idResp.json();
+        const values = (idData?.values ?? []) as string[][];
+        for (let i = 0; i < values.length; i++) {
+          if ((values[i]?.[0] ?? "") === delivery.message_id) {
+            return { ok: true, sheetName: tabName, rowNumber: i + 1, duplicate: true };
+          }
+        }
+      }
+      // If the read failed (e.g. brand-new tab), fall through and append.
+    }
+
+    // 3) Build the row.
     const hasPrice = delivery.price != null;
     const price = hasPrice ? delivery.price! : "";
-    const totalBeforeVat = hasPrice ? delivery.price! : "";
-    const totalAfterVat = hasPrice ? Number((delivery.price! * (1 + VAT_RATE)).toFixed(2)) : "";
+    let beforeVat: number | string = "";
+    let afterVat: number | string = "";
+    if (hasPrice) {
+      if (delivery.vat_explicit) {
+        // Treat stored price as NET (before VAT).
+        beforeVat = delivery.price!;
+        afterVat = Number((delivery.price! * (1 + vatRate)).toFixed(2));
+      } else {
+        // Bare price = final agreed amount. Mirror; no VAT inflation.
+        beforeVat = delivery.price!;
+        afterVat = delivery.price!;
+      }
+    }
 
     const row = [
       formatDate(delivery.delivery_date),
@@ -143,15 +232,16 @@ export async function appendDeliveryToSheet(
       delivery.contact_ordered_by ?? "",
       delivery.notes ?? "",
       price,
-      totalBeforeVat,
-      totalAfterVat,
+      beforeVat,
+      afterVat,
+      delivery.message_id ?? "",
     ];
 
     const appendResp = await gatewayFetch(
-      `/spreadsheets/${spreadsheetId}/values/A:G:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      `/spreadsheets/${spreadsheetId}/values/${tabName}!A:H:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
       {
         method: "POST",
-        body: JSON.stringify({ range: "A:G", majorDimension: "ROWS", values: [row] }),
+        body: JSON.stringify({ range: `${tabName}!A:H`, majorDimension: "ROWS", values: [row] }),
       },
     );
 
@@ -165,10 +255,12 @@ export async function appendDeliveryToSheet(
       } else {
         userMsg = `${userMsg}: ${body.slice(0, 200)}`;
       }
-      return { ok: false, error: userMsg };
+      return { ok: false, error: userMsg, sheetName: tabName };
     }
 
-    return { ok: true };
+    const appendJson = await appendResp.json().catch(() => ({} as Record<string, unknown>));
+    const updatedRange = (appendJson as { updates?: { updatedRange?: string } })?.updates?.updatedRange;
+    return { ok: true, sheetName: tabName, rowNumber: parseRowNumber(updatedRange) };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "שגיאה לא ידועה בכתיבה לגיליון";
     return { ok: false, error: msg };
