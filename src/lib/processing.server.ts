@@ -313,11 +313,16 @@ export async function tryHandleClarificationReply(
     resolution = "misc";
   } else if (mode === "create") {
     const norm = normalize(nameArg!);
+    // Include ARCHIVED clients in the dup check so we don't crash on the unique constraint.
     const { data: existingClients } = await supabase
-      .from("clients").select("id, client_name")
-      .eq("user_id", userId).eq("is_archived", false);
+      .from("clients").select("id, client_name, is_archived")
+      .eq("user_id", userId);
     const existing = (existingClients ?? []).find((c) => normalize(c.client_name) === norm);
     if (existing) {
+      if (existing.is_archived) {
+        // Auto-restore the archived client and reuse it.
+        await supabase.from("clients").update({ is_archived: false }).eq("id", existing.id);
+      }
       targetClientId = existing.id;
       confirmName = existing.client_name;
       resolution = "matched";
