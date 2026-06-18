@@ -556,7 +556,18 @@ async function callLovableAI(rawText: string): Promise<ParsedDelivery> {
 }
 
 function normalize(s: string) {
-  return s.trim().toLowerCase().replace(/["'״׳]/g, "").replace(/\s+/g, " ");
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/["'״׳`]/g, "")
+    .replace(/[,.;:!?()[\]{}<>/\\|+*=~"'–—\-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenize(s: string): string[] {
+  const n = normalize(s);
+  return n ? n.split(" ") : [];
 }
 
 async function resolveClientId(
