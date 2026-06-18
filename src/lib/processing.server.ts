@@ -219,23 +219,24 @@ export async function writeDeliveryToClientSheet(
     writeError = createOrWriteErr instanceof Error ? createOrWriteErr.message : "שגיאה לא ידועה ביצירת/כתיבת גיליון";
   }
 
-  const updatePayload: Record<string, unknown> = {
-    write_status: writeStatus,
-    write_error: writeError,
-    written_at: writeStatus === "נכתב" ? new Date().toISOString() : null,
-  };
+  let newWrittenSheetIds: string[] | null = null;
   if (writtenSheetId) {
-    // Append to the array atomically by reading current value first
     const { data: cur } = await supabase
       .from("deliveries")
       .select("written_sheet_ids")
       .eq("id", delivery.deliveryId)
       .maybeSingle();
     const existing = ((cur?.written_sheet_ids ?? []) as string[]).filter((s) => s !== writtenSheetId);
-    updatePayload.written_sheet_ids = [...existing, writtenSheetId];
+    newWrittenSheetIds = [...existing, writtenSheetId];
   }
-  const { error: updateDeliveryErr } = await supabase.from("deliveries").update(updatePayload).eq("id", delivery.deliveryId);
+  const { error: updateDeliveryErr } = await supabase.from("deliveries").update({
+    write_status: writeStatus,
+    write_error: writeError,
+    written_at: writeStatus === "נכתב" ? new Date().toISOString() : null,
+    ...(newWrittenSheetIds ? { written_sheet_ids: newWrittenSheetIds } : {}),
+  }).eq("id", delivery.deliveryId);
   if (updateDeliveryErr) throw updateDeliveryErr;
+
 
 
   if (writeStatus === "שגיאה" && writeError && delivery.messageId) {
