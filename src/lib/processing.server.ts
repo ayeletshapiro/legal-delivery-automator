@@ -773,7 +773,7 @@ export async function processIncomingMessage(
       const { data: newRow, error: clarifErr } = await supabase.from("pending_clarifications").insert({
         user_id: msg.user_id,
         message_id: messageId,
-        delivery_id: delivery.id,
+        delivery_id: delivery!.id,
         raw_text: text,
       }).select("id").single();
       if (clarifErr) throw clarifErr;
@@ -812,7 +812,7 @@ export async function processIncomingMessage(
         error_detail: "ממתין להבהרה דרך WhatsApp",
         processed_at: new Date().toISOString(),
       }).eq("id", messageId);
-      return { ok: true, status: "awaiting_clarification", deliveryId: delivery.id };
+      return { ok: true, status: "awaiting_clarification", deliveryId: delivery!.id };
     }
 
     // Could not reach WhatsApp → keep awaiting_clarification, do NOT write to sheet yet.
@@ -825,7 +825,7 @@ export async function processIncomingMessage(
       error_type: "clarification_send_failed",
       error_description: errDetail,
     });
-    return { ok: true, status: "awaiting_clarification", deliveryId: delivery.id };
+    return { ok: true, status: "awaiting_clarification", deliveryId: delivery!.id };
   } catch (e: any) {
     const reason = e?.message ?? "שגיאה לא ידועה";
     await supabase.from("incoming_messages").update({
