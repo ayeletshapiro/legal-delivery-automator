@@ -167,6 +167,17 @@ function ClientsPage() {
         להישאר ריקה בשורות הנוספות.
       </p>
 
+      <ToggleGroup
+        type="single"
+        value={filter}
+        onValueChange={(v) => v && setFilter(v as "active" | "archived" | "all")}
+        className="justify-start"
+      >
+        <ToggleGroupItem value="active">פעילים</ToggleGroupItem>
+        <ToggleGroupItem value="archived">בארכיון</ToggleGroupItem>
+        <ToggleGroupItem value="all">הכל</ToggleGroupItem>
+      </ToggleGroup>
+
       <Card>
         {isLoading ? (
           <div className="p-8 text-center text-muted-foreground">טוען...</div>
