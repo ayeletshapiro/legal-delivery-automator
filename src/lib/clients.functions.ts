@@ -26,6 +26,19 @@ export const createClient = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    // Duplicate check using the same normalization the webhook path uses,
+    // so "כהן ושות׳" / "כהן ושות'" / trailing spaces are treated as the same client.
+    const { data: existing, error: exErr } = await context.supabase
+      .from("clients")
+      .select("client_name")
+      .eq("user_id", context.userId);
+    if (exErr) throw exErr;
+
+    const norm = normalize(data.client_name);
+    if ((existing ?? []).some((c) => normalize(c.client_name) === norm)) {
+      throw new Error("לקוח בשם זה כבר קיים");
+    }
+
     const { data: row, error } = await context.supabase
       .from("clients")
       .insert({
@@ -35,7 +48,14 @@ export const createClient = createServerFn({ method: "POST" })
       })
       .select()
       .single();
-    if (error) throw error;
+
+    if (error) {
+      // Safety net: DB unique constraint caught it (race / exact match).
+      if ((error as { code?: string }).code === "23505") {
+        throw new Error("לקוח בשם זה כבר קיים");
+      }
+      throw error;
+    }
     return row;
   });
 
