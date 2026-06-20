@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { normalize } from "@/lib/processing.server";
 
 export const listClients = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -17,10 +18,12 @@ export const listClients = createServerFn({ method: "GET" })
 export const createClient = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { client_name: string; google_sheet_id?: string | null }) =>
-    z.object({
-      client_name: z.string().trim().min(1, "שם לקוח חובה"),
-      google_sheet_id: z.string().trim().nullable().optional(),
-    }).parse(d)
+    z
+      .object({
+        client_name: z.string().trim().min(1, "שם לקוח חובה"),
+        google_sheet_id: z.string().trim().nullable().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: row, error } = await context.supabase
@@ -39,19 +42,18 @@ export const createClient = createServerFn({ method: "POST" })
 export const updateClient = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string; client_name: string; google_sheet_id?: string | null }) =>
-    z.object({
-      id: z.string().uuid(),
-      client_name: z.string().trim().min(1),
-      google_sheet_id: z.string().trim().nullable().optional(),
-    }).parse(d)
+    z
+      .object({
+        id: z.string().uuid(),
+        client_name: z.string().trim().min(1),
+        google_sheet_id: z.string().trim().nullable().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const patch: { client_name: string; google_sheet_id?: string | null } = { client_name: data.client_name };
     if (data.google_sheet_id !== undefined) patch.google_sheet_id = data.google_sheet_id || null;
-    const { error } = await context.supabase
-      .from("clients")
-      .update(patch)
-      .eq("id", data.id);
+    const { error } = await context.supabase.from("clients").update(patch).eq("id", data.id);
     if (error) throw error;
     return { ok: true };
   });
@@ -59,13 +61,10 @@ export const updateClient = createServerFn({ method: "POST" })
 export const archiveClient = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string; archive: boolean }) =>
-    z.object({ id: z.string().uuid(), archive: z.boolean() }).parse(d)
+    z.object({ id: z.string().uuid(), archive: z.boolean() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
-      .from("clients")
-      .update({ is_archived: data.archive })
-      .eq("id", data.id);
+    const { error } = await context.supabase.from("clients").update({ is_archived: data.archive }).eq("id", data.id);
     if (error) throw error;
     return { ok: true };
   });
@@ -73,12 +72,18 @@ export const archiveClient = createServerFn({ method: "POST" })
 export const importClientsWithAliases = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { rows: Array<{ client_name: string; alias?: string | null }> }) =>
-    z.object({
-      rows: z.array(z.object({
-        client_name: z.string().trim().min(1),
-        alias: z.string().trim().nullable().optional(),
-      })).min(1),
-    }).parse(d)
+    z
+      .object({
+        rows: z
+          .array(
+            z.object({
+              client_name: z.string().trim().min(1),
+              alias: z.string().trim().nullable().optional(),
+            }),
+          )
+          .min(1),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const supabase = context.supabase;
@@ -127,7 +132,10 @@ export const importClientsWithAliases = createServerFn({ method: "POST" })
           .from("client_aliases")
           .insert({ client_id: clientId, alias: a, user_id: userId });
         if (error) {
-          if (error.code === "23505") { skippedAliases++; continue; }
+          if (error.code === "23505") {
+            skippedAliases++;
+            continue;
+          }
           throw error;
         }
         createdAliases++;
@@ -136,4 +144,3 @@ export const importClientsWithAliases = createServerFn({ method: "POST" })
 
     return { createdClients, createdAliases, skippedAliases };
   });
-
