@@ -90,11 +90,7 @@ function similarityScore(a: string, b: string): number {
   return (2 * inter) / (A.size + B.size);
 }
 
-async function suggestSimilarClients(
-  supabase: DB,
-  userId: string,
-  hint: string,
-): Promise<string[]> {
+async function suggestSimilarClients(supabase: DB, userId: string, hint: string): Promise<string[]> {
   if (!hint || !hint.trim()) return [];
   const { data: clients } = await supabase
     .from("clients")
@@ -160,11 +156,14 @@ async function expireStaleClarifications(supabase: DB, userId: string): Promise<
         .eq("id", row.delivery_id)
         .maybeSingle();
       if (del) {
-        await supabase.from("deliveries").update({
-          client_id: misc.id,
-          write_status: "pending",
-          write_error: null,
-        }).eq("id", del.id);
+        await supabase
+          .from("deliveries")
+          .update({
+            client_id: misc.id,
+            write_status: "pending",
+            write_error: null,
+          })
+          .eq("id", del.id);
         await writeDeliveryToClientSheet(supabase, {
           deliveryId: del.id,
           messageId: del.message_id,
@@ -178,10 +177,13 @@ async function expireStaleClarifications(supabase: DB, userId: string): Promise<
         });
       }
     }
-    await supabase.from("pending_clarifications").update({
-      resolved_at: new Date().toISOString(),
-      resolution: "expired",
-    }).eq("id", row.id);
+    await supabase
+      .from("pending_clarifications")
+      .update({
+        resolved_at: new Date().toISOString(),
+        resolution: "expired",
+      })
+      .eq("id", row.id);
     await supabase.from("processing_errors").insert({
       message_id: row.message_id,
       user_id: userId,
@@ -224,21 +226,30 @@ export async function tryHandleClarificationReply(
   const text = replyText.trim();
   if (!text) return { kind: "not_a_clarification" };
 
-  const lcRaw = text.toLowerCase().replace(/["'״׳]/g, "").trim();
+  const lcRaw = text
+    .toLowerCase()
+    .replace(/["'״׳]/g, "")
+    .trim();
 
   // Cancel command
   if (CANCEL_WORDS.some((w) => lcRaw === w || lcRaw === w.toLowerCase())) {
-    await supabase.from("pending_clarifications").update({
-      resolved_at: new Date().toISOString(),
-      resolution: "cancelled",
-    }).eq("id", open.id);
+    await supabase
+      .from("pending_clarifications")
+      .update({
+        resolved_at: new Date().toISOString(),
+        resolution: "cancelled",
+      })
+      .eq("id", open.id);
     // Remove the placeholder delivery so it doesn't leak into reports
     await supabase.from("deliveries").delete().eq("id", open.delivery_id);
-    await supabase.from("incoming_messages").update({
-      status: "cancelled",
-      error_detail: "המשתמש ביטל את הבירור דרך WhatsApp",
-      processed_at: new Date().toISOString(),
-    }).eq("id", open.message_id);
+    await supabase
+      .from("incoming_messages")
+      .update({
+        status: "cancelled",
+        error_detail: "המשתמש ביטל את הבירור דרך WhatsApp",
+        processed_at: new Date().toISOString(),
+      })
+      .eq("id", open.message_id);
     await sendWhatsAppMessage(userPhone, "✅ הבירור בוטל. אפשר לשלוח הודעה חדשה.", {
       fromPhone: businessPhone,
       supabase,
@@ -253,7 +264,6 @@ export async function tryHandleClarificationReply(
   // a known client name/alias, we resolve THIS clarification using that client
   // and write the ORIGINAL delivery details to Sheets (handled below in mode=name).
 
-
   let mode: "misc" | "create" | "name";
   let nameArg: string | null = null;
 
@@ -263,8 +273,10 @@ export async function tryHandleClarificationReply(
     mode = "create";
     nameArg = text.replace(/^(חדש|new)\s*[:：]\s*/i, "").trim();
     if (!nameArg) {
-      await sendWhatsAppMessage(userPhone, "❗ ציין/י שם אחרי \"חדש:\" — לדוגמה: חדש: כהן ושות׳", {
-        fromPhone: businessPhone, supabase, userId,
+      await sendWhatsAppMessage(userPhone, '❗ ציין/י שם אחרי "חדש:" — לדוגמה: חדש: כהן ושות׳', {
+        fromPhone: businessPhone,
+        supabase,
+        userId,
         incomingMessageId: incomingMessageId ?? open.message_id,
         replyType: "clarification_reprompt",
       });
@@ -281,9 +293,13 @@ export async function tryHandleClarificationReply(
     .eq("id", open.delivery_id)
     .maybeSingle();
   if (!del) {
-    await supabase.from("pending_clarifications").update({
-      resolved_at: new Date().toISOString(), resolution: "expired",
-    }).eq("id", open.id);
+    await supabase
+      .from("pending_clarifications")
+      .update({
+        resolved_at: new Date().toISOString(),
+        resolution: "expired",
+      })
+      .eq("id", open.id);
     return { kind: "not_a_clarification" };
   }
 
@@ -293,17 +309,24 @@ export async function tryHandleClarificationReply(
 
   if (mode === "misc") {
     let { data: misc } = await supabase
-      .from("clients").select("id, client_name")
-      .eq("user_id", userId).eq("is_miscellaneous", true).maybeSingle();
+      .from("clients")
+      .select("id, client_name")
+      .eq("user_id", userId)
+      .eq("is_miscellaneous", true)
+      .maybeSingle();
     if (!misc) {
       const { data: created } = await supabase
-        .from("clients").insert({ user_id: userId, client_name: "מזדמנים", is_miscellaneous: true })
-        .select("id, client_name").single();
+        .from("clients")
+        .insert({ user_id: userId, client_name: "מזדמנים", is_miscellaneous: true })
+        .select("id, client_name")
+        .single();
       misc = created ?? null;
     }
     if (!misc) {
-      await sendWhatsAppMessage(userPhone, "❗ לא הצלחתי ליצור לקוח \"מזדמנים\".", {
-        fromPhone: businessPhone, supabase, userId,
+      await sendWhatsAppMessage(userPhone, '❗ לא הצלחתי ליצור לקוח "מזדמנים".', {
+        fromPhone: businessPhone,
+        supabase,
+        userId,
         incomingMessageId: incomingMessageId ?? open.message_id,
       });
       return { kind: "reprompted" };
@@ -315,7 +338,8 @@ export async function tryHandleClarificationReply(
     const norm = normalize(nameArg!);
     // Include ARCHIVED clients in the dup check so we don't crash on the unique constraint.
     const { data: existingClients } = await supabase
-      .from("clients").select("id, client_name, is_archived")
+      .from("clients")
+      .select("id, client_name, is_archived")
       .eq("user_id", userId);
     const existing = (existingClients ?? []).find((c) => normalize(c.client_name) === norm);
     if (existing) {
@@ -328,11 +352,15 @@ export async function tryHandleClarificationReply(
       resolution = "matched";
     } else {
       const { data: created, error: createErr } = await supabase
-        .from("clients").insert({ user_id: userId, client_name: nameArg!, is_miscellaneous: false })
-        .select("id, client_name").single();
+        .from("clients")
+        .insert({ user_id: userId, client_name: nameArg!, is_miscellaneous: false })
+        .select("id, client_name")
+        .single();
       if (createErr || !created) {
         await sendWhatsAppMessage(userPhone, `❗ לא הצלחתי ליצור לקוח חדש: ${createErr?.message ?? "שגיאה"}`, {
-          fromPhone: businessPhone, supabase, userId,
+          fromPhone: businessPhone,
+          supabase,
+          userId,
           incomingMessageId: incomingMessageId ?? open.message_id,
         });
         return { kind: "reprompted" };
@@ -345,18 +373,27 @@ export async function tryHandleClarificationReply(
     const { clientId, matched } = await resolveClientId(supabase, userId, nameArg, nameArg!);
     if (!matched) {
       const suggestions = await suggestSimilarClients(supabase, userId, nameArg!);
-      await sendWhatsAppMessage(userPhone, buildClarificationMessage(open.raw_text, suggestions).replace(
-        "🤖 לא זיהיתי לאיזה לקוח לשייך את השליחות:",
-        `❓ לא מצאתי לקוח בשם "${nameArg}". נסה/י שוב:`,
-      ), {
-        fromPhone: businessPhone, supabase, userId,
-        incomingMessageId: incomingMessageId ?? open.message_id,
-        replyType: "clarification_reprompt",
-      });
-      await supabase.from("pending_clarifications").update({
-        reply_sent_at: new Date().toISOString(),
-        reply_type: "reprompt",
-      }).eq("id", open.id);
+      await sendWhatsAppMessage(
+        userPhone,
+        buildClarificationMessage(open.raw_text, suggestions).replace(
+          "🤖 לא זיהיתי לאיזה לקוח לשייך את השליחות:",
+          `❓ לא מצאתי לקוח בשם "${nameArg}". נסה/י שוב:`,
+        ),
+        {
+          fromPhone: businessPhone,
+          supabase,
+          userId,
+          incomingMessageId: incomingMessageId ?? open.message_id,
+          replyType: "clarification_reprompt",
+        },
+      );
+      await supabase
+        .from("pending_clarifications")
+        .update({
+          reply_sent_at: new Date().toISOString(),
+          reply_type: "reprompt",
+        })
+        .eq("id", open.id);
       return { kind: "reprompted" };
     }
     targetClientId = clientId;
@@ -365,11 +402,14 @@ export async function tryHandleClarificationReply(
     resolution = "matched";
   }
 
-  await supabase.from("deliveries").update({
-    client_id: targetClientId,
-    write_status: "pending",
-    write_error: null,
-  }).eq("id", del.id);
+  await supabase
+    .from("deliveries")
+    .update({
+      client_id: targetClientId,
+      write_status: "pending",
+      write_error: null,
+    })
+    .eq("id", del.id);
 
   const writeRes = await writeDeliveryToClientSheet(supabase, {
     deliveryId: del.id,
@@ -383,18 +423,24 @@ export async function tryHandleClarificationReply(
     price: del.price,
   });
 
-  await supabase.from("pending_clarifications").update({
-    resolved_at: new Date().toISOString(),
-    resolution,
-  }).eq("id", open.id);
+  await supabase
+    .from("pending_clarifications")
+    .update({
+      resolved_at: new Date().toISOString(),
+      resolution,
+    })
+    .eq("id", open.id);
 
   // Only mark "done" if the delivery actually landed in a sheet (or was already there).
   const isWritten = writeRes.writeStatus === "נכתב";
-  await supabase.from("incoming_messages").update({
-    status: isWritten ? "done" : "failed",
-    error_detail: isWritten ? null : (writeRes.writeError ?? writeRes.writeStatus),
-    processed_at: new Date().toISOString(),
-  }).eq("id", del.message_id);
+  await supabase
+    .from("incoming_messages")
+    .update({
+      status: isWritten ? "done" : "failed",
+      error_detail: isWritten ? null : (writeRes.writeError ?? writeRes.writeStatus),
+      processed_at: new Date().toISOString(),
+    })
+    .eq("id", del.message_id);
 
   if (isWritten) {
     await sendConfirmationIfNeeded(supabase, {
@@ -410,7 +456,9 @@ export async function tryHandleClarificationReply(
   } else {
     const warn = `⚠️ לא הצלחתי לכתוב לגיליון של "${confirmName}": ${writeRes.writeError ?? writeRes.writeStatus}`;
     await sendWhatsAppMessage(userPhone, warn, {
-      fromPhone: businessPhone, supabase, userId,
+      fromPhone: businessPhone,
+      supabase,
+      userId,
       incomingMessageId: incomingMessageId ?? del.message_id,
       replyType: "confirmation_failed",
     });
@@ -468,7 +516,6 @@ async function sendConfirmationIfNeeded(
     replyType: "confirmation_success",
   });
 }
-
 
 interface ParsedDelivery {
   client_name: string | null;
@@ -558,7 +605,7 @@ async function callLovableAI(rawText: string): Promise<ParsedDelivery> {
   };
 }
 
-function normalize(s: string) {
+export function normalize(s: string) {
   return s
     .trim()
     .toLowerCase()
@@ -580,10 +627,7 @@ async function resolveClientId(
   rawText: string,
 ): Promise<{ clientId: string; matched: boolean }> {
   // Load all aliases + clients up-front (used by both AI-name match and raw-text scan)
-  const { data: aliases } = await supabase
-    .from("client_aliases")
-    .select("client_id, alias")
-    .eq("user_id", userId);
+  const { data: aliases } = await supabase.from("client_aliases").select("client_id, alias").eq("user_id", userId);
   const { data: clients } = await supabase
     .from("clients")
     .select("id, client_name, is_miscellaneous, is_archived")
@@ -723,17 +767,18 @@ export async function writeDeliveryToClientSheet(
     const existing = ((cur?.written_sheet_ids ?? []) as string[]).filter((s) => s !== writtenSheetId);
     newWrittenSheetIds = [...existing, writtenSheetId];
   }
-  const { error: updateDeliveryErr } = await supabase.from("deliveries").update({
-    write_status: writeStatus,
-    write_error: writeError,
-    written_at: writeStatus === "נכתב" ? new Date().toISOString() : null,
-    ...(newWrittenSheetIds ? { written_sheet_ids: newWrittenSheetIds } : {}),
-    ...(writtenSheetName ? { sheet_name: writtenSheetName } : {}),
-    ...(writtenRowNumber ? { row_number: writtenRowNumber } : {}),
-  }).eq("id", delivery.deliveryId);
+  const { error: updateDeliveryErr } = await supabase
+    .from("deliveries")
+    .update({
+      write_status: writeStatus,
+      write_error: writeError,
+      written_at: writeStatus === "נכתב" ? new Date().toISOString() : null,
+      ...(newWrittenSheetIds ? { written_sheet_ids: newWrittenSheetIds } : {}),
+      ...(writtenSheetName ? { sheet_name: writtenSheetName } : {}),
+      ...(writtenRowNumber ? { row_number: writtenRowNumber } : {}),
+    })
+    .eq("id", delivery.deliveryId);
   if (updateDeliveryErr) throw updateDeliveryErr;
-
-
 
   if (writeStatus === "שגיאה" && writeError && delivery.messageId) {
     await supabase.from("processing_errors").insert({
@@ -746,7 +791,6 @@ export async function writeDeliveryToClientSheet(
 
   return { writeStatus, writeError };
 }
-
 
 export interface ProcessResult {
   ok: boolean;
@@ -771,21 +815,33 @@ export async function processIncomingMessage(
 
   if (!msg.user_id) {
     const reason = "המשתמש לא מזוהה (מספר ה-WhatsApp של השולח לא מוגדר בפרופיל)";
-    await supabase.from("incoming_messages").update({
-      status: "failed", error_detail: reason, processed_at: new Date().toISOString(),
-    }).eq("id", messageId);
+    await supabase
+      .from("incoming_messages")
+      .update({
+        status: "failed",
+        error_detail: reason,
+        processed_at: new Date().toISOString(),
+      })
+      .eq("id", messageId);
     return { ok: false, status: "failed", errorMessage: reason };
   }
 
   const text = (msg.transcribed_text || msg.raw_text || "").trim();
   if (!text) {
     const reason = "אין טקסט לעיבוד";
-    await supabase.from("incoming_messages").update({
-      status: "missing_details", error_detail: reason, processed_at: new Date().toISOString(),
-    }).eq("id", messageId);
+    await supabase
+      .from("incoming_messages")
+      .update({
+        status: "missing_details",
+        error_detail: reason,
+        processed_at: new Date().toISOString(),
+      })
+      .eq("id", messageId);
     await supabase.from("processing_errors").insert({
-      message_id: messageId, user_id: msg.user_id,
-      error_type: "missing_details", error_description: reason,
+      message_id: messageId,
+      user_id: msg.user_id,
+      error_type: "missing_details",
+      error_description: reason,
     });
     return { ok: false, status: "missing_details", errorMessage: reason };
   }
@@ -800,7 +856,9 @@ export async function processIncomingMessage(
 
     const { data: existingDelivery, error: existingErr } = await supabase
       .from("deliveries")
-      .select("id, message_id, user_id, client_id, delivery_date, description, contact_ordered_by, notes, price, write_status")
+      .select(
+        "id, message_id, user_id, client_id, delivery_date, description, contact_ordered_by, notes, price, write_status",
+      )
       .eq("message_id", messageId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -839,26 +897,35 @@ export async function processIncomingMessage(
             price: existingDelivery.price,
           });
         }
-        await supabase.from("incoming_messages").update({
-          status: "done", error_detail: null, processed_at: new Date().toISOString(),
-        }).eq("id", messageId);
+        await supabase
+          .from("incoming_messages")
+          .update({
+            status: "done",
+            error_detail: null,
+            processed_at: new Date().toISOString(),
+          })
+          .eq("id", messageId);
         return { ok: true, status: "done", deliveryId: existingDelivery.id };
       }
       delivery = { id: existingDelivery.id };
     } else if (matched) {
-      const { data: newDelivery, error: delErr } = await supabase.from("deliveries").insert({
-        message_id: messageId,
-        client_id: clientId,
-        user_id: msg.user_id,
-        delivery_date: deliveryDate,
-        description: parsed.description,
-        notes: parsed.notes,
-        price: parsed.price,
-        price_missing: parsed.price == null,
-        vat_explicit: parsed.vat_explicit,
-        contact_ordered_by: parsed.contact_ordered_by,
-        write_status: "pending",
-      }).select("id").single();
+      const { data: newDelivery, error: delErr } = await supabase
+        .from("deliveries")
+        .insert({
+          message_id: messageId,
+          client_id: clientId,
+          user_id: msg.user_id,
+          delivery_date: deliveryDate,
+          description: parsed.description,
+          notes: parsed.notes,
+          price: parsed.price,
+          price_missing: parsed.price == null,
+          vat_explicit: parsed.vat_explicit,
+          contact_ordered_by: parsed.contact_ordered_by,
+          write_status: "pending",
+        })
+        .select("id")
+        .single();
       if (delErr) throw delErr;
       await writeDeliveryToClientSheet(supabase, {
         deliveryId: newDelivery.id,
@@ -871,28 +938,36 @@ export async function processIncomingMessage(
         notes: parsed.notes,
         price: parsed.price,
       });
-      await supabase.from("incoming_messages").update({
-        status: "done", error_detail: null, processed_at: new Date().toISOString(),
-      }).eq("id", messageId);
+      await supabase
+        .from("incoming_messages")
+        .update({
+          status: "done",
+          error_detail: null,
+          processed_at: new Date().toISOString(),
+        })
+        .eq("id", messageId);
       return { ok: true, status: "done", deliveryId: newDelivery.id };
     } else {
-      const { data: newDelivery, error: delErr } = await supabase.from("deliveries").insert({
-        message_id: messageId,
-        client_id: clientId,
-        user_id: msg.user_id,
-        delivery_date: deliveryDate,
-        description: parsed.description,
-        notes: parsed.notes,
-        price: parsed.price,
-        price_missing: parsed.price == null,
-        vat_explicit: parsed.vat_explicit,
-        contact_ordered_by: parsed.contact_ordered_by,
-        write_status: "awaiting_clarification",
-      }).select("id").single();
+      const { data: newDelivery, error: delErr } = await supabase
+        .from("deliveries")
+        .insert({
+          message_id: messageId,
+          client_id: clientId,
+          user_id: msg.user_id,
+          delivery_date: deliveryDate,
+          description: parsed.description,
+          notes: parsed.notes,
+          price: parsed.price,
+          price_missing: parsed.price == null,
+          vat_explicit: parsed.vat_explicit,
+          contact_ordered_by: parsed.contact_ordered_by,
+          write_status: "awaiting_clarification",
+        })
+        .select("id")
+        .single();
       if (delErr) throw delErr;
       delivery = { id: newDelivery.id };
     }
-
 
     // Not matched → start (or continue) a clarification flow via WhatsApp.
     await expireStaleClarifications(supabase, msg.user_id);
@@ -909,12 +984,16 @@ export async function processIncomingMessage(
     let clarifId: string | null = existingClarif?.id ?? null;
     let alreadyPrompted = !!existingClarif?.reply_sent_at;
     if (!clarifId) {
-      const { data: newRow, error: clarifErr } = await supabase.from("pending_clarifications").insert({
-        user_id: msg.user_id,
-        message_id: messageId,
-        delivery_id: delivery!.id,
-        raw_text: text,
-      }).select("id").single();
+      const { data: newRow, error: clarifErr } = await supabase
+        .from("pending_clarifications")
+        .insert({
+          user_id: msg.user_id,
+          message_id: messageId,
+          delivery_id: delivery!.id,
+          raw_text: text,
+        })
+        .select("id")
+        .single();
       if (clarifErr) throw clarifErr;
       clarifId = newRow.id;
     }
@@ -924,55 +1003,70 @@ export async function processIncomingMessage(
     let waError: string | null = null;
     if (!alreadyPrompted && msg.sender_phone) {
       const suggestions = await suggestSimilarClients(supabase, msg.user_id, parsed.client_name ?? text);
-      const send = await sendWhatsAppMessage(
-        msg.sender_phone,
-        buildClarificationMessage(text, suggestions),
-        {
-          fromPhone: businessPhone,
-          supabase,
-          userId: msg.user_id,
-          incomingMessageId: messageId,
-          replyType: "clarification_prompt",
-        },
-      );
+      const send = await sendWhatsAppMessage(msg.sender_phone, buildClarificationMessage(text, suggestions), {
+        fromPhone: businessPhone,
+        supabase,
+        userId: msg.user_id,
+        incomingMessageId: messageId,
+        replyType: "clarification_prompt",
+      });
       clarificationSent = send.ok;
       waError = send.ok ? null : (send.error ?? "שליחת WhatsApp נכשלה");
       if (send.ok && clarifId) {
-        await supabase.from("pending_clarifications").update({
-          reply_sent_at: new Date().toISOString(),
-          reply_type: "initial",
-        }).eq("id", clarifId);
+        await supabase
+          .from("pending_clarifications")
+          .update({
+            reply_sent_at: new Date().toISOString(),
+            reply_type: "initial",
+          })
+          .eq("id", clarifId);
       }
     }
 
     if (clarificationSent) {
-      await supabase.from("incoming_messages").update({
-        status: "awaiting_clarification",
-        error_detail: "ממתין להבהרה דרך WhatsApp",
-        processed_at: new Date().toISOString(),
-      }).eq("id", messageId);
+      await supabase
+        .from("incoming_messages")
+        .update({
+          status: "awaiting_clarification",
+          error_detail: "ממתין להבהרה דרך WhatsApp",
+          processed_at: new Date().toISOString(),
+        })
+        .eq("id", messageId);
       return { ok: true, status: "awaiting_clarification", deliveryId: delivery!.id };
     }
 
     // Could not reach WhatsApp → keep awaiting_clarification, do NOT write to sheet yet.
     const errDetail = `לא זוהה לקוח. שליחת הבהרה ב-WhatsApp נכשלה: ${waError ?? "לא ידוע"}`;
-    await supabase.from("incoming_messages").update({
-      status: "awaiting_clarification", error_detail: errDetail, processed_at: new Date().toISOString(),
-    }).eq("id", messageId);
+    await supabase
+      .from("incoming_messages")
+      .update({
+        status: "awaiting_clarification",
+        error_detail: errDetail,
+        processed_at: new Date().toISOString(),
+      })
+      .eq("id", messageId);
     await supabase.from("processing_errors").insert({
-      message_id: messageId, user_id: msg.user_id,
+      message_id: messageId,
+      user_id: msg.user_id,
       error_type: "clarification_send_failed",
       error_description: errDetail,
     });
     return { ok: true, status: "awaiting_clarification", deliveryId: delivery!.id };
   } catch (e: any) {
     const reason = e?.message ?? "שגיאה לא ידועה";
-    await supabase.from("incoming_messages").update({
-      status: "failed", error_detail: reason, processed_at: new Date().toISOString(),
-    }).eq("id", messageId);
+    await supabase
+      .from("incoming_messages")
+      .update({
+        status: "failed",
+        error_detail: reason,
+        processed_at: new Date().toISOString(),
+      })
+      .eq("id", messageId);
     await supabase.from("processing_errors").insert({
-      message_id: messageId, user_id: msg.user_id,
-      error_type: "processing_failed", error_description: reason,
+      message_id: messageId,
+      user_id: msg.user_id,
+      error_type: "processing_failed",
+      error_description: reason,
     });
     return { ok: false, status: "failed", errorMessage: reason };
   }
