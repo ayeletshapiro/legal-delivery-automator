@@ -116,7 +116,7 @@ export const importClientsWithAliases = createServerFn({ method: "POST" })
       .eq("user_id", userId);
     if (exErr) throw exErr;
     const byName = new Map<string, string>();
-    for (const c of existing ?? []) byName.set(c.client_name.trim().toLowerCase(), c.id);
+    for (const c of existing ?? []) byName.set(normalize(c.client_name), c.id);
 
     // Group rows by client_name → aliases[]
     const grouped = new Map<string, Set<string>>();
