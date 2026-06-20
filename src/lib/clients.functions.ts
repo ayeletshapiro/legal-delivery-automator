@@ -133,7 +133,7 @@ export const importClientsWithAliases = createServerFn({ method: "POST" })
     let skippedAliases = 0;
 
     for (const [name, aliases] of grouped) {
-      const key = name.toLowerCase();
+      const key = normalize(name);
       let clientId = byName.get(key);
       if (!clientId) {
         const { data: row, error } = await supabase
