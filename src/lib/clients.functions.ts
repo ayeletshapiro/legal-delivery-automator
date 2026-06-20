@@ -28,15 +28,26 @@ export const createClient = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     // Duplicate check using the same normalization the webhook path uses,
     // so "כהן ושות׳" / "כהן ושות'" / trailing spaces are treated as the same client.
+    const norm = normalize(data.client_name);
+
+    // 1. Check against existing client names.
     const { data: existing, error: exErr } = await context.supabase
       .from("clients")
       .select("client_name")
       .eq("user_id", context.userId);
     if (exErr) throw exErr;
-
-    const norm = normalize(data.client_name);
     if ((existing ?? []).some((c) => normalize(c.client_name) === norm)) {
       throw new Error("לקוח בשם זה כבר קיים");
+    }
+
+    // 2. Check against existing aliases — the name may already point to another client.
+    const { data: aliases, error: aliasErr } = await context.supabase
+      .from("client_aliases")
+      .select("alias")
+      .eq("user_id", context.userId);
+    if (aliasErr) throw aliasErr;
+    if ((aliases ?? []).some((a) => normalize(a.alias) === norm)) {
+      throw new Error("השם הזה כבר קיים ככינוי של לקוח אחר");
     }
 
     const { data: row, error } = await context.supabase
