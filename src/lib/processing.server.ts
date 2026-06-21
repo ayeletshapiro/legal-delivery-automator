@@ -37,10 +37,10 @@ function isValidIsoDate(s: string | null | undefined): s is string {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
 }
 
-/** Read VAT rate from app_config (cached per request). Falls back to 0.18. */
-let _vatRateCache: number | null = null;
+/** Read VAT rate from app_config for the given user. Falls back to 0.18.
+ * No module-level cache: in serverless the value must reflect the latest
+ * config and must stay per-user. The query is cheap, so we read it fresh. */
 async function loadVatRate(supabase: DB, userId: string): Promise<number> {
-  if (_vatRateCache != null) return _vatRateCache;
   const { data } = await supabase
     .from("app_config")
     .select("vat_rate")
@@ -48,8 +48,7 @@ async function loadVatRate(supabase: DB, userId: string): Promise<number> {
     .order("user_id", { ascending: false, nullsFirst: false })
     .limit(1)
     .maybeSingle();
-  _vatRateCache = typeof data?.vat_rate === "number" ? data.vat_rate : 0.18;
-  return _vatRateCache;
+  return typeof data?.vat_rate === "number" ? data.vat_rate : 0.18;
 }
 
 function buildClarificationMessage(rawText: string, suggestions: string[] = []): string {
