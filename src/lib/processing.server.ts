@@ -798,6 +798,36 @@ export interface ProcessResult {
   errorMessage?: string;
 }
 
+async function createPendingClarification(
+  supabase: DB,
+  row: { user_id: string; message_id: string; delivery_id: string; raw_text: string },
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("pending_clarifications")
+    .insert(row)
+    .select("id")
+    .single();
+
+  if (!error) return data.id;
+
+  const isRlsFailure = error.code === "42501" || /row-level security/i.test(error.message ?? "");
+  if (!isRlsFailure) throw error;
+
+  console.warn("[processing] pending_clarifications insert hit RLS; retrying with service role", {
+    message_id: row.message_id,
+    user_id: row.user_id,
+  });
+
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: adminData, error: adminError } = await supabaseAdmin
+    .from("pending_clarifications")
+    .insert(row)
+    .select("id")
+    .single();
+  if (adminError) throw adminError;
+  return adminData.id;
+}
+
 export async function processIncomingMessage(
   supabase: DB,
   messageId: string,
@@ -983,18 +1013,12 @@ export async function processIncomingMessage(
     let clarifId: string | null = existingClarif?.id ?? null;
     let alreadyPrompted = !!existingClarif?.reply_sent_at;
     if (!clarifId) {
-      const { data: newRow, error: clarifErr } = await supabase
-        .from("pending_clarifications")
-        .insert({
-          user_id: msg.user_id,
-          message_id: messageId,
-          delivery_id: delivery!.id,
-          raw_text: text,
-        })
-        .select("id")
-        .single();
-      if (clarifErr) throw clarifErr;
-      clarifId = newRow.id;
+      clarifId = await createPendingClarification(supabase, {
+        user_id: msg.user_id,
+        message_id: messageId,
+        delivery_id: delivery!.id,
+        raw_text: text,
+      });
     }
 
     // Dedup: don't re-send the same initial prompt for the same message.
