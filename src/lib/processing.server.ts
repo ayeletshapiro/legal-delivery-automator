@@ -996,6 +996,32 @@ export async function processIncomingMessage(
         .single();
       if (delErr) throw delErr;
       delivery = { id: newDelivery.id };
+
+      // If another open clarification exists for this user (from an earlier message),
+      // this incoming message is likely a reply to it — not a new delivery.
+      // tryHandleClarificationReply (which runs first in the webhook) handles replies;
+      // if we reached here, the reply text didn't match a known client either.
+      // Don't spawn a competing placeholder + clarification — clean up and bail out.
+      const { data: otherOpen } = await supabase
+        .from("pending_clarifications")
+        .select("id")
+        .eq("user_id", msg.user_id)
+        .is("resolved_at", null)
+        .neq("message_id", messageId)
+        .limit(1)
+        .maybeSingle();
+      if (otherOpen) {
+        await supabase.from("deliveries").delete().eq("id", newDelivery.id);
+        await supabase
+          .from("incoming_messages")
+          .update({
+            status: "done",
+            error_detail: "טופל כתשובת הבהרה להודעה קודמת",
+            processed_at: new Date().toISOString(),
+          })
+          .eq("id", messageId);
+        return { ok: true, status: "skipped_reply" };
+      }
     }
 
     // Not matched → start (or continue) a clarification flow via WhatsApp.
