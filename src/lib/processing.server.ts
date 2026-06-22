@@ -793,7 +793,7 @@ export async function writeDeliveryToClientSheet(
 
 export interface ProcessResult {
   ok: boolean;
-  status: "done" | "missing_client" | "missing_details" | "failed" | "awaiting_clarification";
+  status: "done" | "missing_client" | "missing_details" | "failed" | "awaiting_clarification" | "skipped_reply";
   deliveryId?: string;
   errorMessage?: string;
 }
