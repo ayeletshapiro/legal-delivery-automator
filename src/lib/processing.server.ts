@@ -217,7 +217,7 @@ export async function tryHandleClarificationReply(
     .select("id, delivery_id, message_id, raw_text, created_at")
     .eq("user_id", userId)
     .is("resolved_at", null)
-    .order("created_at", { ascending: false })
+    .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
   if (!open) return { kind: "not_a_clarification" };
