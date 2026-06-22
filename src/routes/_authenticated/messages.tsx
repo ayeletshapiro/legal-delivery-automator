@@ -2,20 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { listMessages, createTestMessage } from "@/lib/messages.functions";
+import { listMessages } from "@/lib/messages.functions";
 import { processMessage } from "@/lib/processing.functions";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   MessageSquare,
-  Plus,
   Play,
   RotateCcw,
   Type,
@@ -72,7 +67,6 @@ function statusStyle(status: string): { cls: string; Icon: typeof CheckCircle2 }
   if (status === "cancelled" || status === "ignored") {
     return { cls: "bg-slate-50 text-slate-600 border-slate-200", Icon: XCircle };
   }
-  // received / processing / awaiting_clarification / missing_*
   return { cls: "bg-amber-50 text-amber-700 border-amber-200", Icon: Clock };
 }
 
@@ -101,28 +95,11 @@ type Message = {
 function MessagesPage() {
   const qc = useQueryClient();
   const listFn = useServerFn(listMessages);
-  const testFn = useServerFn(createTestMessage);
   const processFn = useServerFn(processMessage);
   const [status, setStatus] = useState<string>("all");
   const { data, isLoading } = useQuery({
     queryKey: ["messages", status],
     queryFn: () => listFn({ data: { status: status === "all" ? null : status } }) as Promise<Message[]>,
-  });
-
-  const [open, setOpen] = useState(false);
-  const [sender, setSender] = useState("");
-  const [mtype, setMtype] = useState<"text" | "audio" | "image" | "document">("text");
-  const [text, setText] = useState("");
-
-  const testMut = useMutation({
-    mutationFn: () => testFn({ data: { sender_phone: sender, message_type: mtype, raw_text: text } }),
-    onSuccess: () => {
-      toast.success("הודעת בדיקה נוצרה");
-      qc.invalidateQueries({ queryKey: ["messages"] });
-      setOpen(false);
-      setText("");
-    },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   const processMut = useMutation({
@@ -135,7 +112,6 @@ function MessagesPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  /** Whether a message can be (re)processed. */
   function canProcess(m: Message): boolean {
     return Boolean(
       (m.message_type === "text" && (m.raw_text || m.transcribed_text)) ||
@@ -148,7 +124,6 @@ function MessagesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary">
@@ -174,53 +149,9 @@ function MessagesPage() {
               ))}
             </SelectContent>
           </Select>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Plus className="ml-1.5 h-4 w-4" />
-                הודעת בדיקה
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>הודעת בדיקה (פנימי בלבד)</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>טלפון שולח</Label>
-                  <Input value={sender} onChange={(e) => setSender(e.target.value)} dir="ltr" placeholder="+972..." />
-                </div>
-                <div className="space-y-2">
-                  <Label>סוג הודעה</Label>
-                  <Select value={mtype} onValueChange={(v) => setMtype(v as typeof mtype)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(typeLabels).map(([k, v]) => (
-                        <SelectItem key={k} value={k}>
-                          {v}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>טקסט גולמי</Label>
-                  <Textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button onClick={() => testMut.mutate()} disabled={!sender.trim() || testMut.isPending}>
-                  צור
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
 
-      {/* Loading / empty / data */}
       {isLoading ? (
         <Card className="p-8 text-center text-muted-foreground">טוען...</Card>
       ) : data && data.length === 0 ? (
@@ -232,7 +163,6 @@ function MessagesPage() {
         </Card>
       ) : (
         <>
-          {/* DESKTOP: table */}
           <Card className="hidden overflow-hidden md:block">
             <Table>
               <TableHeader>
@@ -297,7 +227,6 @@ function MessagesPage() {
             </Table>
           </Card>
 
-          {/* MOBILE: cards */}
           <div className="space-y-3 md:hidden">
             {data?.map((m) => {
               const TIcon = typeIcon(m.message_type);
