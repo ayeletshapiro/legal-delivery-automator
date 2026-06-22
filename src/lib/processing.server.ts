@@ -793,7 +793,7 @@ export async function writeDeliveryToClientSheet(
 
 export interface ProcessResult {
   ok: boolean;
-  status: "done" | "missing_client" | "missing_details" | "failed" | "awaiting_clarification" | "treated_as_reply";
+  status: "done" | "missing_client" | "missing_details" | "failed" | "awaiting_clarification";
   deliveryId?: string;
   errorMessage?: string;
 }
@@ -802,7 +802,11 @@ async function createPendingClarification(
   supabase: DB,
   row: { user_id: string; message_id: string; delivery_id: string; raw_text: string },
 ): Promise<string> {
-  const { data, error } = await supabase.from("pending_clarifications").insert(row).select("id").single();
+  const { data, error } = await supabase
+    .from("pending_clarifications")
+    .insert(row)
+    .select("id")
+    .single();
 
   if (!error) return data.id;
 
@@ -997,7 +1001,7 @@ export async function processIncomingMessage(
     // Not matched → start (or continue) a clarification flow via WhatsApp.
     await expireStaleClarifications(supabase, msg.user_id);
 
-    // Reuse an already-open clarification for THIS message if it exists (reprocess case).
+    // Reuse an already-open clarification for this message if it exists (reprocess case).
     const { data: existingClarif } = await supabase
       .from("pending_clarifications")
       .select("id, reply_sent_at")
@@ -1005,36 +1009,6 @@ export async function processIncomingMessage(
       .eq("message_id", messageId)
       .is("resolved_at", null)
       .maybeSingle();
-
-    // Guard: if there is ANOTHER open clarification (for a different message),
-    // this message is almost certainly a reply to it — not a new delivery.
-    // Do NOT spawn a second clarification (which would later leak to "מזדמנים"
-    // and write the reply text to a sheet). Roll back the placeholder we just
-    // created and let tryHandleClarificationReply handle this as a reply.
-    if (!existingClarif) {
-      const { data: otherOpen } = await supabase
-        .from("pending_clarifications")
-        .select("id")
-        .eq("user_id", msg.user_id)
-        .is("resolved_at", null)
-        .neq("message_id", messageId)
-        .limit(1)
-        .maybeSingle();
-
-      if (otherOpen) {
-        // Remove the placeholder delivery created above so nothing leaks.
-        await supabase.from("deliveries").delete().eq("id", delivery!.id);
-        await supabase
-          .from("incoming_messages")
-          .update({
-            status: "pending_clarification",
-            error_detail: "טופל כתשובה לבירור פתוח אחר",
-            processed_at: new Date().toISOString(),
-          })
-          .eq("id", messageId);
-        return { ok: true, status: "treated_as_reply" };
-      }
-    }
 
     let clarifId: string | null = existingClarif?.id ?? null;
     let alreadyPrompted = !!existingClarif?.reply_sent_at;
