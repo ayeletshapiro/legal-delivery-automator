@@ -4,12 +4,24 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { getConfig, updateVatRate } from "@/lib/config.functions";
 import { getProfile, updateWhatsappPhone } from "@/lib/profile.functions";
+import { wipeDemoData, getLastDemoWipe } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Settings, User, Percent, ShieldCheck, Phone, Lock } from "lucide-react";
+import { Settings, User, Percent, ShieldCheck, Phone, Lock, Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -31,8 +43,17 @@ function SettingsPage() {
   const profFn = useServerFn(getProfile);
   const phoneFn = useServerFn(updateWhatsappPhone);
 
+  const wipeFn = useServerFn(wipeDemoData);
+  const lastWipeFn = useServerFn(getLastDemoWipe);
+
   const cfg = useQuery({ queryKey: ["config"], queryFn: () => cfgFn() });
   const prof = useQuery({ queryKey: ["profile"], queryFn: () => profFn() });
+  const isAdminRole = prof.data?.roles.includes("admin") ?? false;
+  const lastWipe = useQuery({
+    queryKey: ["last-demo-wipe"],
+    queryFn: () => lastWipeFn(),
+    enabled: isAdminRole,
+  });
 
   const [vatPct, setVatPct] = useState("");
   const [phone, setPhone] = useState("");
@@ -62,8 +83,19 @@ function SettingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const isAdmin = prof.data?.roles.includes("admin");
+  const isAdmin = isAdminRole;
   const email = prof.data?.profile?.email ?? "";
+
+  const wipeMut = useMutation({
+    mutationFn: () => wipeFn(),
+    onSuccess: (res) => {
+      const total = Object.values(res.deleted).reduce((a, b) => a + b, 0);
+      toast.success(`נמחקו ${total} רשומות דמו`);
+      qc.invalidateQueries({ queryKey: ["last-demo-wipe"] });
+      qc.invalidateQueries();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -149,6 +181,49 @@ function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Admin: wipe demo data */}
+      {isAdmin && (
+        <Card className="overflow-hidden border-destructive/30">
+          <div className="flex items-center gap-2 border-b bg-destructive/5 px-5 py-3">
+            <Trash2 className="h-4 w-4 text-destructive" />
+            <span className="font-medium">ניקוי נתוני דמו</span>
+          </div>
+          <CardContent className="space-y-3 p-5">
+            <p className="text-sm text-muted-foreground">
+              מוחק את כל הנתונים התפעוליים: מסירות, הודעות נכנסות/יוצאות, בירורים, שגיאות עיבוד, לקוחות (פרט ל"מזדמנים") וכינויים.
+              משתמשים, הרשאות והגדרות נשמרים.
+            </p>
+            {lastWipe.data && (
+              <p className="text-xs text-muted-foreground">
+                ניקוי אחרון:{" "}
+                {new Date(lastWipe.data.created_at).toLocaleString("he-IL")}
+                {lastWipe.data.performed_by_email ? ` · ${lastWipe.data.performed_by_email}` : ""}
+              </p>
+            )}
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" disabled={wipeMut.isPending}>
+                  <Trash2 className="ml-1 h-4 w-4" />
+                  {wipeMut.isPending ? "מוחק..." : "ניקוי נתוני דמו"}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>למחוק את כל נתוני הדמו?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    הפעולה אינה הפיכה. כל המסירות, ההודעות, השגיאות, הבירורים והלקוחות (פרט ל"מזדמנים") יימחקו לצמיתות.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>ביטול</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => wipeMut.mutate()}>כן, מחק הכל</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
