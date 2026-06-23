@@ -234,15 +234,9 @@ export async function appendDeliveryToSheet(
     let beforeVat: number | string = "";
     let afterVat: number | string = "";
     if (hasPrice) {
-      if (delivery.vat_explicit) {
-        // Treat stored price as NET (before VAT).
-        beforeVat = delivery.price!;
-        afterVat = Number((delivery.price! * (1 + vatRate)).toFixed(2));
-      } else {
-        // Bare price = final agreed amount. Mirror; no VAT inflation.
-        beforeVat = delivery.price!;
-        afterVat = delivery.price!;
-      }
+      // price is always stored as NET; after-VAT is always net × (1 + vatRate).
+      beforeVat = delivery.price!;
+      afterVat = Number((delivery.price! * (1 + vatRate)).toFixed(2));
     }
 
     const row = [
