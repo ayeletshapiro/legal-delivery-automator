@@ -961,7 +961,7 @@ export async function processIncomingMessage(
           user_id: msg.user_id,
           delivery_date: deliveryDate,
           description: parsed.description,
-          notes: parsed.notes,
+          notes: mergeNotes(parsed.notes),
           price: parsed.price,
           price_missing: parsed.price == null,
           vat_explicit: parsed.vat_explicit,
@@ -979,7 +979,7 @@ export async function processIncomingMessage(
         delivery_date: deliveryDate,
         description: parsed.description,
         contact_ordered_by: parsed.contact_ordered_by,
-        notes: parsed.notes,
+        notes: mergeNotes(parsed.notes),
         price: parsed.price,
       });
       await supabase
@@ -1000,7 +1000,7 @@ export async function processIncomingMessage(
           user_id: msg.user_id,
           delivery_date: deliveryDate,
           description: parsed.description,
-          notes: parsed.notes,
+          notes: mergeNotes(parsed.notes),
           price: parsed.price,
           price_missing: parsed.price == null,
           vat_explicit: parsed.vat_explicit,
