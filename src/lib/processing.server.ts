@@ -116,7 +116,7 @@ Return STRICT JSON only, matching this schema:
   "delivery_date": string | null,       // ISO date YYYY-MM-DD if mentioned. null = today.
   "contact_ordered_by": string | null,  // Name of the person who placed the order, if mentioned.
   "notes": string | null,               // Extra remarks. Append a VAT note when applicable (see below).
-  "vat_explicit": boolean               // true ONLY if the message explicitly signals VAT, false otherwise.
+  "vat_explicit": boolean               // true only when the message explicitly stated before/after VAT. NOTE: this field is informational only and does NOT affect the after-VAT calculation — price is always net.
 }
 
 CRITICAL RULES:
