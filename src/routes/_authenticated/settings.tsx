@@ -181,6 +181,49 @@ function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Admin: wipe demo data */}
+      {isAdmin && (
+        <Card className="overflow-hidden border-destructive/30">
+          <div className="flex items-center gap-2 border-b bg-destructive/5 px-5 py-3">
+            <Trash2 className="h-4 w-4 text-destructive" />
+            <span className="font-medium">ניקוי נתוני דמו</span>
+          </div>
+          <CardContent className="space-y-3 p-5">
+            <p className="text-sm text-muted-foreground">
+              מוחק את כל הנתונים התפעוליים: מסירות, הודעות נכנסות/יוצאות, בירורים, שגיאות עיבוד, לקוחות (פרט ל"מזדמנים") וכינויים.
+              משתמשים, הרשאות והגדרות נשמרים.
+            </p>
+            {lastWipe.data && (
+              <p className="text-xs text-muted-foreground">
+                ניקוי אחרון:{" "}
+                {new Date(lastWipe.data.created_at).toLocaleString("he-IL")}
+                {lastWipe.data.performed_by_email ? ` · ${lastWipe.data.performed_by_email}` : ""}
+              </p>
+            )}
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" disabled={wipeMut.isPending}>
+                  <Trash2 className="ml-1 h-4 w-4" />
+                  {wipeMut.isPending ? "מוחק..." : "ניקוי נתוני דמו"}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>למחוק את כל נתוני הדמו?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    הפעולה אינה הפיכה. כל המסירות, ההודעות, השגיאות, הבירורים והלקוחות (פרט ל"מזדמנים") יימחקו לצמיתות.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>ביטול</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => wipeMut.mutate()}>כן, מחק הכל</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
