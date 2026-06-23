@@ -10,8 +10,6 @@ import { createHmac, timingSafeEqual } from "crypto";
  */
 
 function computeTwilioSignature(authToken: string, url: string, params: Record<string, string>) {
-  // Twilio algorithm: full URL + concatenated (sorted key + value) for all POST params,
-  // HMAC-SHA1, base64.
   const sortedKeys = Object.keys(params).sort();
   let data = url;
   for (const k of sortedKeys) data += k + params[k];
@@ -49,15 +47,11 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
           );
         }
 
-        // Read raw body (Twilio sends form-urlencoded)
         const rawBody = await request.text();
         const params: Record<string, string> = {};
         const usp = new URLSearchParams(rawBody);
         for (const [k, v] of usp.entries()) params[k] = v;
 
-        // Reconstruct the full URL as Twilio sees it.
-        // Twilio signs the URL it called. Behind a proxy the request URL host
-        // may differ; prefer X-Forwarded-* headers when present.
         const proto = request.headers.get("x-forwarded-proto") ?? new URL(request.url).protocol.replace(":", "");
         const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? new URL(request.url).host;
         const pathAndQuery = new URL(request.url).pathname + new URL(request.url).search;
@@ -87,7 +81,6 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-        // Map sender_phone → user_id via profiles.whatsapp_phone (if registered)
         const { data: profile } = await supabaseAdmin
           .from("profiles")
           .select("id")
@@ -115,35 +108,13 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
           return new Response(JSON.stringify({ error: "DB error" }), { status: 500 });
         }
 
+        const businessPhone = stripWhatsAppPrefix(params["To"] ?? "");
+
         // Auto-process text messages from known users.
         if (inserted && profile?.id && messageType === "text" && rawText) {
           try {
-            const businessPhone = stripWhatsAppPrefix(params["To"] ?? "");
-            const { tryHandleClarificationReply, processIncomingMessage } = await import("@/lib/processing.server");
-            const outcome = await tryHandleClarificationReply(
-              supabaseAdmin, profile.id, senderPhone, rawText, businessPhone, inserted.id,
-            );
-            if (outcome.kind === "resolved") {
-              await supabaseAdmin.from("incoming_messages").update({
-                status: "done",
-                error_detail: "תשובת הבהרה — שויך לקוח ונכתב לגיליון",
-                processed_at: new Date().toISOString(),
-              }).eq("id", inserted.id);
-            } else if (outcome.kind === "reprompted") {
-              await supabaseAdmin.from("incoming_messages").update({
-                status: "awaiting_clarification",
-                error_detail: "ממתין להבהרה — נשלחה בקשה חוזרת",
-                processed_at: new Date().toISOString(),
-              }).eq("id", inserted.id);
-            } else if (outcome.kind === "cancelled") {
-              await supabaseAdmin.from("incoming_messages").update({
-                status: "cancelled",
-                error_detail: "המשתמש ביטל את הבירור",
-                processed_at: new Date().toISOString(),
-              }).eq("id", inserted.id);
-            } else {
-              await processIncomingMessage(supabaseAdmin, inserted.id, businessPhone);
-            }
+            const { processIncomingMessage } = await import("@/lib/processing.server");
+            await processIncomingMessage(supabaseAdmin, inserted.id, businessPhone);
           } catch (e) {
             console.error("[twilio-webhook] auto-process error", e);
           }
@@ -160,7 +131,6 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
             const lovableKey = process.env.LOVABLE_API_KEY;
             if (!lovableKey) throw new Error("LOVABLE_API_KEY לא מוגדר");
 
-            // 1) Download audio from Twilio with Basic Auth
             const basic = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
             const mediaResp = await fetch(mediaUrl, {
               headers: { Authorization: `Basic ${basic}` },
@@ -172,7 +142,6 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
             }
             const audioBuf = await mediaResp.arrayBuffer();
 
-            // 2) Transcribe via Lovable AI
             const extMap: Record<string, string> = {
               "audio/ogg": "ogg",
               "audio/opus": "ogg",
@@ -216,32 +185,8 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
 
             if (profile?.id) {
               try {
-                const businessPhone = stripWhatsAppPrefix(params["To"] ?? "");
-                const { tryHandleClarificationReply, processIncomingMessage } = await import("@/lib/processing.server");
-                const outcome = await tryHandleClarificationReply(
-                  supabaseAdmin, profile.id, senderPhone, transcript, businessPhone, inserted.id,
-                );
-                if (outcome.kind === "resolved") {
-                  await supabaseAdmin.from("incoming_messages").update({
-                    status: "done",
-                    error_detail: "תשובת הבהרה — שויך לקוח ונכתב לגיליון (קולי)",
-                    processed_at: new Date().toISOString(),
-                  }).eq("id", inserted.id);
-                } else if (outcome.kind === "reprompted") {
-                  await supabaseAdmin.from("incoming_messages").update({
-                    status: "awaiting_clarification",
-                    error_detail: "ממתין להבהרה (קולי)",
-                    processed_at: new Date().toISOString(),
-                  }).eq("id", inserted.id);
-                } else if (outcome.kind === "cancelled") {
-                  await supabaseAdmin.from("incoming_messages").update({
-                    status: "cancelled",
-                    error_detail: "המשתמש ביטל את הבירור (קולי)",
-                    processed_at: new Date().toISOString(),
-                  }).eq("id", inserted.id);
-                } else {
-                  await processIncomingMessage(supabaseAdmin, inserted.id, businessPhone);
-                }
+                const { processIncomingMessage } = await import("@/lib/processing.server");
+                await processIncomingMessage(supabaseAdmin, inserted.id, businessPhone);
               } catch (e) {
                 console.error("[twilio-webhook] audio auto-process error", e);
               }
@@ -260,10 +205,8 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
               error_type: "transcription_failed",
               error_description: reason,
             });
-            // Tell the courier in Hebrew so the delivery isn't silently lost.
             try {
               const { sendWhatsAppMessage } = await import("@/lib/twilio.server");
-              const businessPhone = stripWhatsAppPrefix(params["To"] ?? "");
               await sendWhatsAppMessage(
                 senderPhone,
                 "❗ לא הצלחתי לתמלל את ההודעה הקולית. אפשר/י לשלוח שוב כטקסט?",
@@ -281,8 +224,6 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
           }
         }
 
-
-        // Twilio expects TwiML or empty 200. Return empty TwiML.
         return new Response("<Response/>", {
           status: 200, headers: { "content-type": "text/xml" },
         });

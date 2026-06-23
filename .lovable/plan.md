@@ -1,33 +1,73 @@
 ## Goal
 
-When the courier sends a WhatsApp message that also includes a media attachment, the resulting line in the client's Google Sheet should show — in the notes column — either:
-- **תמונה מצורפת** for an image, or
-- **מסמך מצורף** for any other attached file (PDF, Word, etc.).
+Delete the WhatsApp clarification flow entirely. On a no-client-match, the system marks the message as `missing_client`, logs an error, and sends one Hebrew "please resend with client name" reply. No pending state, no auto-assignment to "מזדמנים", no UI for pending clarifications.
 
-Audio messages are excluded (the voice note *is* the message, not an attachment to it).
+## Code changes
 
-## Where the change goes
+### `src/lib/processing.server.ts` — rewrite the no-match branch
 
-The webhook already detects the message type (`text` / `audio` / `image` / `document`) and stores it on `incoming_messages.message_type`, plus `media_received = true` when `NumMedia > 0`. The notes that end up in Sheets come from `processIncomingMessage` in `src/lib/processing.server.ts`, which calls the AI parser and uses `parsed.notes` when inserting a new `deliveries` row.
+Delete these symbols and every reference to them:
+- `tryHandleClarificationReply` (export) + its `ClarificationOutcome` type
+- `expireStaleClarifications`
+- `buildClarificationMessage`
+- `suggestSimilarClients`
+- All `from("pending_clarifications")` reads/writes/inserts/updates
+- The `"awaiting_clarification"` branch in `processIncomingMessage` (~L1043–L1118) and the helper that opens a clarification with service-role retry (~L796–L830)
 
-We only need a tiny addition in that one function — no schema changes, no webhook changes, no UI changes.
+Change `resolveClientId` (~L622):
+- Remove the final "fallback to מזדמנים" block (~L663–L666).
+- On no match return `{ clientId: null, matched: false }`. Update its return type.
 
-### Edit: `src/lib/processing.server.ts` → `processIncomingMessage`
+In `processIncomingMessage` after `resolveClientId`, when `matched === false`:
+1. Do not insert a delivery, do not write to any sheet.
+2. `update incoming_messages set status='missing_client', error_detail='לא זוהה שם לקוח בהודעה', processed_at=now()`.
+3. Insert `processing_errors` row: `error_type='missing_client'`, Hebrew description.
+4. `sendWhatsAppMessage(sender, "❗ ההודעה לא נקלטה — לא זוהה שם לקוח. אנא שלח את ההודעה שוב כולל שם הלקוח .", { replyType: "missing_client", ... })`.
+5. Return `{ ok: true, status: "missing_client" }`.
 
-1. After loading the `msg` row and before parsing/inserting, compute an attachment note:
-   - `image` → `"תמונה מצורפת"`
-   - `document` → `"מסמך מצורף"`
-   - anything else (`text`, `audio`) → no attachment note
-2. After the AI returns `parsed`, merge the attachment note into `parsed.notes`:
-   - if `parsed.notes` is empty → use the attachment note as-is
-   - otherwise → join with `" · "` (so an existing VAT note is preserved)
-3. Use this merged value in **both** insert branches (the "matched" insert at ~L949 and the "awaiting_clarification" insert at ~L988), and also in the immediate `writeDeliveryToClientSheet` call at ~L967.
+Drop `"awaiting_clarification"` and `"skipped_reply"` from the result-status union.
 
-Because the clarification flow re-reads the delivery row's `notes` field when it eventually writes to Sheets, attachments sent with the original message will automatically carry through to the sheet after the user resolves the clarification — no separate change needed there.
+### `src/routes/api/public/twilio-webhook.ts`
 
-## Out of scope
+- Remove both `tryHandleClarificationReply` imports and both `outcome.kind` switch blocks (text branch ~L120–L150, audio branch ~L218–L248).
+- Replace each with a direct `await processIncomingMessage(supabaseAdmin, inserted.id, businessPhone)` for known users.
+- Keep duplicate-`whatsapp_message_id` 200 short-circuit and signature check exactly as today. (No `maxDuration` export exists currently; not adding one in this change.)
 
-- No changes to the webhook signature/validation logic.
-- No new DB columns: `incoming_messages.message_type` and `media_received` already capture what we need.
-- No changes to manual edit UI: if the user later edits the notes from the deliveries screen, their edit wins (as today).
-- Audio-only messages and pure text messages behave exactly as before.
+### `src/lib/clarifications.functions.ts` — delete the file
+
+Nothing else should import it after the UI cleanup below.
+
+### UI cleanup (required for the build to stay green)
+
+The current UI imports the functions being deleted; these are unavoidable build-fix edits, not feature changes:
+
+- **Delete** `src/routes/_authenticated/clarifications.tsx`.
+- **`src/components/app-sidebar.tsx`** — remove the `{ title: "בירורים", url: "/clarifications", ... }` nav entry.
+- **`src/routes/_authenticated/dashboard.tsx`** — remove the amber clarifications banner block (L78–L88) and the now-unused `HelpCircle`/`ChevronLeft` imports if they become unused.
+- **`src/lib/dashboard.functions.ts`** — remove the `pending_clarifications` count query and the `openClarifications` field from the returned object.
+
+After deleting the route file, `src/routeTree.gen.ts` will regenerate automatically on next dev/build.
+
+### Comment-only touch-ups
+
+- `src/lib/processing.functions.ts` L11 — update the comment to drop `pending_clarifications` from the list of tables it mentions.
+- Add a short note at the top of `supabase/migrations/` (e.g. a new `README.md` line, or a comment in the next migration) marking `public.pending_clarifications` as **deprecated, unused by app code, intentionally not dropped**.
+
+## Database
+
+No migration. `pending_clarifications` stays in place, untouched, with zero application reads or writes. No new tables, no new columns.
+
+## Keep untouched
+
+- `resolveClientId` matching (name + alias + token scan) — only its final misc-fallback is removed.
+- Happy path: matched client → insert delivery → `writeDeliveryToClientSheet` → status `done` → optional confirmation message.
+- Attachment-note logic (`mergeNotes` + `"תמונה מצורפת"` / `"מסמך מצורף"`).
+- Audio transcription path in the webhook.
+- Twilio signature validation and the `63016` outside-24h-window logging in `twilio.server.ts`.
+- `app_config`, `client_aliases`, `clients`, `deliveries`, `incoming_messages`, `outbound_messages`, `processing_errors` tables and their RLS.
+
+## Verification after build
+
+- `rg "pending_clarifications|tryHandleClarification|expireStaleClarifications|buildClarificationMessage|suggestSimilarClients|ClarificationOutcome|awaiting_clarification" src/` returns no hits.
+- TypeScript build passes.
+- Sending a message with an unknown client name results in: `incoming_messages.status = missing_client`, one row in `processing_errors`, one outbound WhatsApp logged in `outbound_messages` with the Hebrew resend prompt, and no delivery row created.

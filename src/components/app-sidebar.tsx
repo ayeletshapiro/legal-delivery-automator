@@ -1,5 +1,5 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, Tags, MessageSquare, AlertCircle, Settings, LogOut, Truck, HelpCircle } from "lucide-react";
+import { LayoutDashboard, Users, Tags, MessageSquare, AlertCircle, Settings, LogOut, Truck } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -21,7 +21,7 @@ const items = [
   { title: "לקוחות", url: "/clients", icon: Users },
   { title: "כינויים", url: "/aliases", icon: Tags },
   { title: "הודעות", url: "/messages", icon: MessageSquare },
-  { title: "בירורים", url: "/clarifications", icon: HelpCircle },
+  
   { title: "שגיאות", url: "/errors", icon: AlertCircle },
   { title: "הגדרות", url: "/settings", icon: Settings },
 ] as const;

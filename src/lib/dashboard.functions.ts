@@ -8,12 +8,11 @@ export const getDashboardStats = createServerFn({ method: "GET" })
     today.setHours(0, 0, 0, 0);
     const todayIso = today.toISOString();
 
-    const [msgsToday, openErrors, activeClients, totalDeliveries, openClarif] = await Promise.all([
+    const [msgsToday, openErrors, activeClients, totalDeliveries] = await Promise.all([
       context.supabase.from("incoming_messages").select("*", { count: "exact", head: true }).gte("created_at", todayIso),
       context.supabase.from("processing_errors").select("*", { count: "exact", head: true }).is("resolved_at", null),
       context.supabase.from("clients").select("*", { count: "exact", head: true }).eq("is_archived", false),
       context.supabase.from("deliveries").select("*", { count: "exact", head: true }),
-      context.supabase.from("pending_clarifications").select("*", { count: "exact", head: true }).is("resolved_at", null),
     ]);
 
     return {
@@ -21,6 +20,5 @@ export const getDashboardStats = createServerFn({ method: "GET" })
       openErrors: openErrors.count ?? 0,
       activeClients: activeClients.count ?? 0,
       totalDeliveries: totalDeliveries.count ?? 0,
-      openClarifications: openClarif.count ?? 0,
     };
   });
