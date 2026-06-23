@@ -83,8 +83,19 @@ function SettingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const isAdmin = prof.data?.roles.includes("admin");
+  const isAdmin = isAdminRole;
   const email = prof.data?.profile?.email ?? "";
+
+  const wipeMut = useMutation({
+    mutationFn: () => wipeFn(),
+    onSuccess: (res) => {
+      const total = Object.values(res.deleted).reduce((a, b) => a + b, 0);
+      toast.success(`נמחקו ${total} רשומות דמו`);
+      qc.invalidateQueries({ queryKey: ["last-demo-wipe"] });
+      qc.invalidateQueries();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   return (
     <div className="max-w-2xl space-y-6">
