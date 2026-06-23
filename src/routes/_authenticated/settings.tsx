@@ -43,8 +43,17 @@ function SettingsPage() {
   const profFn = useServerFn(getProfile);
   const phoneFn = useServerFn(updateWhatsappPhone);
 
+  const wipeFn = useServerFn(wipeDemoData);
+  const lastWipeFn = useServerFn(getLastDemoWipe);
+
   const cfg = useQuery({ queryKey: ["config"], queryFn: () => cfgFn() });
   const prof = useQuery({ queryKey: ["profile"], queryFn: () => profFn() });
+  const isAdminRole = prof.data?.roles.includes("admin") ?? false;
+  const lastWipe = useQuery({
+    queryKey: ["last-demo-wipe"],
+    queryFn: () => lastWipeFn(),
+    enabled: isAdminRole,
+  });
 
   const [vatPct, setVatPct] = useState("");
   const [phone, setPhone] = useState("");
