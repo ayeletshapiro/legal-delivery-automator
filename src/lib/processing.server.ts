@@ -129,7 +129,7 @@ CRITICAL RULES:
 - Dates: "היום"=today, "מחר"=tomorrow. Use the provided "today" date as reference.
 
 PRICE & VAT — VAT rate is 18%:
-- DEFAULT (no VAT keyword): the courier means the FINAL agreed amount. Set "price" to the number as-is and set "vat_explicit"=false. Do NOT divide and do NOT multiply.
+- DEFAULT (no VAT keyword): the price is the NET amount before VAT. Store the number as-is in "price". Set "vat_explicit"=false. Do NOT add a VAT note for this case.
 - Message says price WITH VAT ("כולל מע\"מ", "אחרי מע\"מ", "ברוטו"): divide by 1.18, round to 2 decimals, set "vat_explicit"=true, and add a note like "מחיר בהודעה: 40₪ כולל מע\"מ".
 - Message says price BEFORE VAT ("לפני מע\"מ", "בלי מע\"מ", "+מע\"מ", "פלוס מע\"מ", "נטו"): use as-is, set "vat_explicit"=true, and add a note like "מחיר בהודעה: 40₪ לפני מע\"מ".
 
