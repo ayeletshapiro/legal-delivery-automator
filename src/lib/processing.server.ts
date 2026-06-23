@@ -877,6 +877,21 @@ export async function processIncomingMessage(
 
   await supabase.from("incoming_messages").update({ status: "processing" }).eq("id", messageId);
 
+  // Attachment note: when the WhatsApp message includes an image/document
+  // alongside the text, surface that fact in the sheet's notes column.
+  const attachmentNote =
+    msg.media_received && msg.message_type === "image"
+      ? "תמונה מצורפת"
+      : msg.media_received && msg.message_type === "document"
+        ? "מסמך מצורף"
+        : null;
+  const mergeNotes = (n: string | null): string | null => {
+    const base = (n ?? "").trim();
+    if (!attachmentNote) return base || null;
+    if (!base) return attachmentNote;
+    return `${base} · ${attachmentNote}`;
+  };
+
   try {
     const parsed = await callLovableAI(text);
     const { clientId, matched } = await resolveClientId(supabase, msg.user_id, parsed.client_name, text);
@@ -946,7 +961,7 @@ export async function processIncomingMessage(
           user_id: msg.user_id,
           delivery_date: deliveryDate,
           description: parsed.description,
-          notes: parsed.notes,
+          notes: mergeNotes(parsed.notes),
           price: parsed.price,
           price_missing: parsed.price == null,
           vat_explicit: parsed.vat_explicit,
@@ -964,7 +979,7 @@ export async function processIncomingMessage(
         delivery_date: deliveryDate,
         description: parsed.description,
         contact_ordered_by: parsed.contact_ordered_by,
-        notes: parsed.notes,
+        notes: mergeNotes(parsed.notes),
         price: parsed.price,
       });
       await supabase
@@ -985,7 +1000,7 @@ export async function processIncomingMessage(
           user_id: msg.user_id,
           delivery_date: deliveryDate,
           description: parsed.description,
-          notes: parsed.notes,
+          notes: mergeNotes(parsed.notes),
           price: parsed.price,
           price_missing: parsed.price == null,
           vat_explicit: parsed.vat_explicit,
