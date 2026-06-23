@@ -81,10 +81,10 @@ type Delivery = {
   clients: { client_name: string } | null;
 };
 
-/** After-VAT value: only inflate when VAT was explicit; otherwise mirror the price. */
+/** after-VAT is always net × 1.18 */
 function afterVat(d: Delivery): number {
   const price = d.price ?? 0;
-  return d.vat_explicit ? Number((price * 1.18).toFixed(2)) : price;
+  return Number((price * 1.18).toFixed(2));
 }
 
 function DeliveriesPage() {
