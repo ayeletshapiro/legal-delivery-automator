@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getDashboardStats } from "@/lib/dashboard.functions";
 import { Card } from "@/components/ui/card";
-import { MessageSquare, AlertCircle, Users, Truck, HelpCircle, ChevronLeft, Package } from "lucide-react";
+import { MessageSquare, AlertCircle, Users, Truck, Package } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
@@ -75,17 +75,6 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Clarifications banner */}
-      {data.openClarifications > 0 && (
-        <Link
-          to="/clarifications"
-          className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-amber-900 transition hover:bg-amber-100"
-        >
-          <HelpCircle className="h-5 w-5 shrink-0 text-amber-700" />
-          <span className="text-sm font-medium">יש {data.openClarifications} בירורים שמחכים לך — לחץ/י לטיפול</span>
-          <ChevronLeft className="mr-auto h-5 w-5 text-amber-700" />
-        </Link>
-      )}
 
       {/* Stat cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
