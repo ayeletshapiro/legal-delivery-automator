@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import {
   MessageSquare,
   Play,
-  RotateCcw,
   Type,
   Mic,
   Image as ImageIcon,
