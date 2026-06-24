@@ -169,7 +169,6 @@ function MessagesPage() {
                   <TableHead className="text-right">סוג</TableHead>
                   <TableHead className="text-right">תוכן</TableHead>
                   <TableHead className="text-right">סטטוס</TableHead>
-                  <TableHead className="text-right">פעולה</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -194,19 +193,6 @@ function MessagesPage() {
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={m.status} />
-                      </TableCell>
-                      <TableCell>
-                        {canProcess(m) && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={processMut.isPending}
-                            onClick={() => processMut.mutate(m.id)}
-                          >
-                            <Play className="ml-1.5 h-4 w-4" />
-                            עבד
-                          </Button>
-                        )}
                       </TableCell>
                     </TableRow>
                   );
