@@ -243,17 +243,8 @@ function MessagesPage() {
                         disabled={processMut.isPending}
                         onClick={() => processMut.mutate(m.id)}
                       >
-                        {isReprocess(m.status) ? (
-                          <>
-                            <RotateCcw className="ml-1.5 h-4 w-4" />
-                            עבד מחדש
-                          </>
-                        ) : (
-                          <>
-                            <Play className="ml-1.5 h-4 w-4" />
-                            עבד
-                          </>
-                        )}
+                          <Play className="ml-1.5 h-4 w-4" />
+                          עבד
                       </Button>
                     </div>
                   )}
