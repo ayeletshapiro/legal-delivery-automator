@@ -112,13 +112,11 @@ function MessagesPage() {
   });
 
   function canProcess(m: Message): boolean {
-    return Boolean(
+    const hasContent =
       (m.message_type === "text" && (m.raw_text || m.transcribed_text)) ||
-      (m.message_type === "audio" && m.transcribed_text),
-    );
-  }
-  function isReprocess(status: string): boolean {
-    return ["done", "missing_client", "awaiting_clarification", "cancelled", "failed"].includes(status);
+      (m.message_type === "audio" && m.transcribed_text);
+    const unprocessed = !["done", "missing_client", "awaiting_clarification", "cancelled", "failed", "ignored", "transcription_failed"].includes(m.status);
+    return Boolean(hasContent && unprocessed);
   }
 
   return (
