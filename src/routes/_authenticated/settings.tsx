@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { getConfig, updateVatRate } from "@/lib/config.functions";
 import { getProfile, updateWhatsappPhone } from "@/lib/profile.functions";
 import { wipeDemoData, getLastDemoWipe } from "@/lib/admin.functions";
+import { getSheetsStatus } from "@/lib/sheets.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +22,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Settings, User, Percent, ShieldCheck, Phone, Lock, Trash2 } from "lucide-react";
+import { Settings, User, Percent, ShieldCheck, Phone, Lock, Trash2, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ExternalLink } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
