@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { getConfig, updateVatRate } from "@/lib/config.functions";
 import { getProfile, updateWhatsappPhone } from "@/lib/profile.functions";
 import { wipeDemoData, getLastDemoWipe } from "@/lib/admin.functions";
+import { getSheetsStatus } from "@/lib/sheets.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +22,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Settings, User, Percent, ShieldCheck, Phone, Lock, Trash2 } from "lucide-react";
+import { Settings, User, Percent, ShieldCheck, Phone, Lock, Trash2, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ExternalLink } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -45,6 +46,13 @@ function SettingsPage() {
 
   const wipeFn = useServerFn(wipeDemoData);
   const lastWipeFn = useServerFn(getLastDemoWipe);
+  const sheetsStatusFn = useServerFn(getSheetsStatus);
+
+  const sheets = useQuery({
+    queryKey: ["sheets-status"],
+    queryFn: () => sheetsStatusFn(),
+    refetchOnWindowFocus: false,
+  });
 
   const cfg = useQuery({ queryKey: ["config"], queryFn: () => cfgFn() });
   const prof = useQuery({ queryKey: ["profile"], queryFn: () => profFn() });
@@ -181,6 +189,83 @@ function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Google Sheets connection card */}
+      <Card className="overflow-hidden">
+        <div className="flex items-center gap-2 border-b bg-muted/30 px-5 py-3">
+          <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+          <span className="font-medium">חיבור Google Sheets</span>
+        </div>
+        <CardContent className="space-y-4 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              {sheets.isLoading ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">בודק חיבור...</span>
+                </>
+              ) : sheets.data?.connected ? (
+                <>
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-emerald-700">מחובר</p>
+                    <p className="text-xs text-muted-foreground">החיבור פעיל ועובד תקין</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-5 w-5 text-destructive" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-destructive">לא מחובר</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {sheets.data?.error ?? "אין חיבור פעיל ל-Google Sheets"}
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => sheets.refetch()}
+              disabled={sheets.isFetching}
+            >
+              <RefreshCw className={`ml-1 h-3.5 w-3.5 ${sheets.isFetching ? "animate-spin" : ""}`} />
+              בדוק
+            </Button>
+          </div>
+
+          <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+            <p className="text-sm font-medium">החלפת חשבון Google / חיבור מחדש</p>
+            <ol className="space-y-2 text-sm text-muted-foreground list-decimal pr-5">
+              <li>פתחי את הגדרות סביבת העבודה ב-Lovable (Workspace → Connections).</li>
+              <li>מצאי את החיבור של Google Sheets ולחצי <strong>Disconnect</strong>.</li>
+              <li>
+                לחצי <strong>+ Add new connection</strong> והתחברי עם חשבון Google הרצוי.
+                <span className="block text-xs mt-1">
+                  טיפ: אם את מחוברת ב-Gmail לחשבון אחר, פתחי <strong>חלון פרטי (Incognito)</strong> כדי לבחור בחשבון הנכון.
+                </span>
+              </li>
+              <li>חזרי לכאן ולחצי <strong>בדוק</strong> כדי לוודא שהחיבור החדש פעיל.</li>
+            </ol>
+            <Button asChild variant="default" size="sm" className="w-full sm:w-auto">
+              <a
+                href="https://lovable.dev/workspace/connections"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                פתח הגדרות חיבורים
+              </a>
+            </Button>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            שימי לב: לאחר החלפת החשבון, גיליונות שנוצרו תחת החשבון הקודם לא יהיו נגישים אלא אם שיתפת אותם עם החשבון החדש.
+          </p>
+        </CardContent>
+      </Card>
+
 
       {/* Admin: wipe demo data */}
       {isAdmin && (
