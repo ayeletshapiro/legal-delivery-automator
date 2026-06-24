@@ -46,6 +46,13 @@ function SettingsPage() {
 
   const wipeFn = useServerFn(wipeDemoData);
   const lastWipeFn = useServerFn(getLastDemoWipe);
+  const sheetsStatusFn = useServerFn(getSheetsStatus);
+
+  const sheets = useQuery({
+    queryKey: ["sheets-status"],
+    queryFn: () => sheetsStatusFn(),
+    refetchOnWindowFocus: false,
+  });
 
   const cfg = useQuery({ queryKey: ["config"], queryFn: () => cfgFn() });
   const prof = useQuery({ queryKey: ["profile"], queryFn: () => profFn() });
