@@ -227,8 +227,9 @@ async function resolveClientId(
     if (nameHit) return { clientId: nameHit.id, matched: true };
   }
 
-  // Fallback: scan the raw message text for any alias or client name (token-boundary match)
-  const textTokens = ` ${tokenize(rawText).join(" ")} `;
+  // Fallback 1: scan the raw message text for any alias or client name (full token-boundary match)
+  const textTokenList = tokenize(rawText);
+  const textTokens = ` ${textTokenList.join(" ")} `;
   const candidates = new Set<string>();
   for (const a of allAliases) {
     const p = tokenize(a.alias).join(" ");
@@ -240,6 +241,36 @@ async function resolveClientId(
   }
   if (candidates.size === 1) {
     return { clientId: [...candidates][0], matched: true };
+  }
+  if (candidates.size > 1) {
+    return { clientId: null, matched: false };
+  }
+
+  // Fallback 2: distinctive single-token match. For each significant token in
+  // a client name/alias (len >= 3), if it appears in the message AND it maps to
+  // exactly one client across all known names/aliases, treat as a unique hit.
+  // This handles cases like client "הלפר / ירושלים" with message "עבור הלפר".
+  const tokenToClients = new Map<string, Set<string>>();
+  const addTokens = (clientId: string, phrase: string) => {
+    for (const tok of tokenize(phrase)) {
+      if (tok.length < 3) continue;
+      if (!tokenToClients.has(tok)) tokenToClients.set(tok, new Set());
+      tokenToClients.get(tok)!.add(clientId);
+    }
+  };
+  for (const c of activeClients) addTokens(c.id, c.client_name);
+  for (const a of allAliases) addTokens(a.client_id, a.alias);
+
+  const tokenCandidates = new Set<string>();
+  for (const tok of textTokenList) {
+    if (tok.length < 3) continue;
+    const owners = tokenToClients.get(tok);
+    if (owners && owners.size === 1) {
+      tokenCandidates.add([...owners][0]);
+    }
+  }
+  if (tokenCandidates.size === 1) {
+    return { clientId: [...tokenCandidates][0], matched: true };
   }
 
   return { clientId: null, matched: false };
