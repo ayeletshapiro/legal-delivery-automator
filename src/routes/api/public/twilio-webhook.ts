@@ -41,10 +41,10 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
       POST: async ({ request }) => {
         const authToken = process.env.TWILIO_AUTH_TOKEN;
         if (!authToken) {
-          return new Response(
-            JSON.stringify({ error: "Webhook not configured" }),
-            { status: 503, headers: { "content-type": "application/json" } }
-          );
+          return new Response(JSON.stringify({ error: "Webhook not configured" }), {
+            status: 503,
+            headers: { "content-type": "application/json" },
+          });
         }
 
         const rawBody = await request.text();
@@ -53,7 +53,8 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
         for (const [k, v] of usp.entries()) params[k] = v;
 
         const proto = request.headers.get("x-forwarded-proto") ?? new URL(request.url).protocol.replace(":", "");
-        const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? new URL(request.url).host;
+        const host =
+          request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? new URL(request.url).host;
         const pathAndQuery = new URL(request.url).pathname + new URL(request.url).search;
         const fullUrl = `${proto}://${host}${pathAndQuery}`;
 
@@ -62,7 +63,8 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
         if (!provided || !safeEqualB64(provided, expected)) {
           console.warn("[twilio-webhook] invalid signature", { fullUrl });
           return new Response(JSON.stringify({ error: "Invalid signature" }), {
-            status: 403, headers: { "content-type": "application/json" },
+            status: 403,
+            headers: { "content-type": "application/json" },
           });
         }
 
@@ -70,7 +72,8 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
         const from = params["From"];
         if (!messageSid || !from) {
           return new Response(JSON.stringify({ error: "Missing required fields" }), {
-            status: 400, headers: { "content-type": "application/json" },
+            status: 400,
+            headers: { "content-type": "application/json" },
           });
         }
 
@@ -87,21 +90,26 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
           .eq("whatsapp_phone", senderPhone)
           .maybeSingle();
 
-        const { data: inserted, error } = await supabaseAdmin.from("incoming_messages").insert({
-          whatsapp_message_id: messageSid,
-          sender_phone: senderPhone,
-          message_type: messageType,
-          raw_text: rawText,
-          media_received: numMedia > 0,
-          status: "received",
-          user_id: profile?.id ?? null,
-        }).select("id").single();
+        const { data: inserted, error } = await supabaseAdmin
+          .from("incoming_messages")
+          .insert({
+            whatsapp_message_id: messageSid,
+            sender_phone: senderPhone,
+            message_type: messageType,
+            raw_text: rawText,
+            media_received: numMedia > 0,
+            status: "received",
+            user_id: profile?.id ?? null,
+          })
+          .select("id")
+          .single();
 
         if (error) {
           if (error.code === "23505") {
             // duplicate — idempotent OK
             return new Response("<Response/>", {
-              status: 200, headers: { "content-type": "text/xml" },
+              status: 200,
+              headers: { "content-type": "text/xml" },
             });
           }
           console.error("[twilio-webhook] insert error", error);
@@ -110,8 +118,12 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
 
         const businessPhone = stripWhatsAppPrefix(params["To"] ?? "");
 
-        // Auto-process text messages from known users.
-        if (inserted && profile?.id && messageType === "text" && rawText) {
+        // Auto-process messages that carry text we can parse. This covers:
+        //  - plain text messages
+        //  - image/document messages that include a caption (Body)
+        // Audio is handled separately below (needs transcription first).
+        const hasParsableText = messageType !== "audio" && !!rawText && rawText.trim().length > 0;
+        if (inserted && profile?.id && hasParsableText) {
           try {
             const { processIncomingMessage } = await import("@/lib/processing.server");
             await processIncomingMessage(supabaseAdmin, inserted.id, businessPhone);
@@ -194,11 +206,14 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
           } catch (e) {
             const reason = e instanceof Error ? e.message : "שגיאה לא ידועה בתמלול";
             console.error("[twilio-webhook] transcription error", reason);
-            await supabaseAdmin.from("incoming_messages").update({
-              status: "transcription_failed",
-              error_detail: reason,
-              processed_at: new Date().toISOString(),
-            }).eq("id", inserted.id);
+            await supabaseAdmin
+              .from("incoming_messages")
+              .update({
+                status: "transcription_failed",
+                error_detail: reason,
+                processed_at: new Date().toISOString(),
+              })
+              .eq("id", inserted.id);
             await supabaseAdmin.from("processing_errors").insert({
               message_id: inserted.id,
               user_id: profile?.id ?? null,
@@ -207,17 +222,13 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
             });
             try {
               const { sendWhatsAppMessage } = await import("@/lib/twilio.server");
-              await sendWhatsAppMessage(
-                senderPhone,
-                "❗ לא הצלחתי לתמלל את ההודעה הקולית. אפשר/י לשלוח שוב כטקסט?",
-                {
-                  fromPhone: businessPhone,
-                  supabase: supabaseAdmin,
-                  userId: profile?.id ?? null,
-                  incomingMessageId: inserted.id,
-                  replyType: "transcription_failed",
-                },
-              );
+              await sendWhatsAppMessage(senderPhone, "❗ לא הצלחתי לתמלל את ההודעה הקולית. אפשר/י לשלוח שוב כטקסט?", {
+                fromPhone: businessPhone,
+                supabase: supabaseAdmin,
+                userId: profile?.id ?? null,
+                incomingMessageId: inserted.id,
+                replyType: "transcription_failed",
+              });
             } catch (notifyErr) {
               console.error("[twilio-webhook] transcription failure notify error", notifyErr);
             }
@@ -225,7 +236,8 @@ export const Route = createFileRoute("/api/public/twilio-webhook")({
         }
 
         return new Response("<Response/>", {
-          status: 200, headers: { "content-type": "text/xml" },
+          status: 200,
+          headers: { "content-type": "text/xml" },
         });
       },
     },
