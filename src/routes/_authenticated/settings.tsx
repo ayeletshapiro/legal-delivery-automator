@@ -262,12 +262,12 @@ function SettingsPage() {
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" disabled={wipeMut.isPending}>
                   <Trash2 className="ml-1 h-4 w-4" />
-                  {wipeMut.isPending ? "מוחק..." : "ניקוי נתוני דמו"}
+                  {wipeMut.isPending ? "מוחק..." : "מחיקת נתונים"}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>למחוק את כל נתוני הדמו?</AlertDialogTitle>
+                  <AlertDialogTitle>מחיקת נתונים</AlertDialogTitle>
                   <AlertDialogDescription>
                     הפעולה אינה הפיכה. כל המסירות, ההודעות, השגיאות, הבירורים והלקוחות (פרט ל"מזדמנים") יימחקו לצמיתות.
                   </AlertDialogDescription>
