@@ -244,7 +244,7 @@ function SettingsPage() {
         <Card className="overflow-hidden border-destructive/30">
           <div className="flex items-center gap-2 border-b bg-destructive/5 px-5 py-3">
             <Trash2 className="h-4 w-4 text-destructive" />
-            <span className="font-medium">ניקוי נתוני דמו</span>
+            <span className="font-medium">מחיקת נתונים</span>
           </div>
           <CardContent className="space-y-3 p-5">
             <p className="text-sm text-muted-foreground">
@@ -262,12 +262,12 @@ function SettingsPage() {
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" disabled={wipeMut.isPending}>
                   <Trash2 className="ml-1 h-4 w-4" />
-                  {wipeMut.isPending ? "מוחק..." : "ניקוי נתוני דמו"}
+                  {wipeMut.isPending ? "מוחק..." : "מחיקת נתונים"}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>למחוק את כל נתוני הדמו?</AlertDialogTitle>
+                  <AlertDialogTitle>מחיקת נתונים</AlertDialogTitle>
                   <AlertDialogDescription>
                     הפעולה אינה הפיכה. כל המסירות, ההודעות, השגיאות, הבירורים והלקוחות (פרט ל"מזדמנים") יימחקו לצמיתות.
                   </AlertDialogDescription>
