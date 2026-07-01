@@ -186,6 +186,7 @@ function MessagesPage() {
                   <TableHead className="text-right">סוג</TableHead>
                   <TableHead className="text-right">תוכן</TableHead>
                   <TableHead className="text-right">סטטוס</TableHead>
+                  <TableHead className="text-right">פעולה</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -209,7 +210,20 @@ function MessagesPage() {
                         {m.transcribed_text || m.raw_text || (m.media_received ? "(מדיה)" : "—")}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={m.status} />
+                        <StatusBadge status={m.status} deliveryWriteStatus={m.delivery_write_status} />
+                      </TableCell>
+                      <TableCell>
+                        {canProcess(m) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={processMut.isPending}
+                            onClick={() => processMut.mutate(m.id)}
+                          >
+                            <Play className="ml-1.5 h-3.5 w-3.5" />
+                            {processLabel(m)}
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
