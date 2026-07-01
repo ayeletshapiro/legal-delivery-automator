@@ -33,11 +33,28 @@ function authHeaders() {
 }
 
 async function gatewayFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const resp = await fetch(`${GATEWAY_URL}${path}`, {
-    ...init,
-    headers: { ...authHeaders(), ...(init.headers || {}) },
-  });
-  return resp;
+  const url = `${GATEWAY_URL}${path}`;
+  const maxAttempts = 4;
+  let resp: Response | null = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    resp = await fetch(url, {
+      ...init,
+      headers: { ...authHeaders(), ...(init.headers || {}) },
+    });
+    if (resp.status !== 429 && resp.status !== 503) return resp;
+    if (attempt === maxAttempts - 1) return resp;
+    const retryAfterHeader = resp.headers.get("Retry-After");
+    let waitMs: number;
+    const retryAfterSec = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+    if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
+      waitMs = Math.min(retryAfterSec * 1000, 15000);
+    } else {
+      const base = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
+      waitMs = Math.min(base + Math.floor(Math.random() * 500), 15000);
+    }
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+  return resp!;
 }
 
 /** Format Hebrew date as DD/MM/YYYY for display in sheet. */
