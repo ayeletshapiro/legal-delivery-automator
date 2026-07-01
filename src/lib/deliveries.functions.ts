@@ -128,3 +128,32 @@ export const deleteDelivery = createServerFn({ method: "POST" })
     if (error) throw error;
     return { ok: true };
   });
+
+export const retryDeliveryWrite = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: row, error } = await context.supabase
+      .from("deliveries")
+      .select("id, message_id, user_id, client_id, delivery_date, description, contact_ordered_by, notes, price")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) throw new Error("שליחות לא נמצאה");
+    if (row.user_id !== context.userId) throw new Error("אין הרשאה לבצע פעולה זו");
+    const { writeDeliveryToClientSheet } = await import("./processing.server");
+    const res = await writeDeliveryToClientSheet(context.supabase, {
+      deliveryId: row.id,
+      messageId: row.message_id,
+      userId: row.user_id,
+      clientId: row.client_id,
+      delivery_date: row.delivery_date,
+      description: row.description,
+      contact_ordered_by: row.contact_ordered_by,
+      notes: row.notes,
+      price: row.price,
+      checkDuplicate: true,
+    });
+    return { ok: res.writeStatus === "נכתב", writeStatus: res.writeStatus, writeError: res.writeError };
+  });
+
