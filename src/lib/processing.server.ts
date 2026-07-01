@@ -548,6 +548,7 @@ export async function processIncomingMessage(
           contact_ordered_by: existingDelivery.contact_ordered_by,
           notes: existingDelivery.notes,
           price: existingDelivery.price,
+          checkDuplicate: true,
         });
       }
       await supabase
