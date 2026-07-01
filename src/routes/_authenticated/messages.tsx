@@ -245,7 +245,7 @@ function MessagesPage() {
                         {m.sender_phone}
                       </span>
                     </div>
-                    <StatusBadge status={m.status} />
+                    <StatusBadge status={m.status} deliveryWriteStatus={m.delivery_write_status} />
                   </div>
 
                   <p className="mb-2 text-sm">{content}</p>
@@ -261,7 +261,7 @@ function MessagesPage() {
                         onClick={() => processMut.mutate(m.id)}
                       >
                           <Play className="ml-1.5 h-4 w-4" />
-                          עבד
+                          {processLabel(m)}
                       </Button>
                     </div>
                   )}
