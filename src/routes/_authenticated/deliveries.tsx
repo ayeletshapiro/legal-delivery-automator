@@ -1,15 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { listDeliveries } from "@/lib/deliveries.functions";
+import { listDeliveries, retryDeliveryWrite } from "@/lib/deliveries.functions";
 import { listClients } from "@/lib/clients.functions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
-import { Package, CheckCircle2, Clock, AlertTriangle, FileX } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { Package, CheckCircle2, Clock, AlertTriangle, FileX, RotateCcw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/deliveries")({
   component: DeliveriesPage,
