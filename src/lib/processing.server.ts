@@ -346,6 +346,7 @@ export async function writeDeliveryToClientSheet(
             message_id: delivery.messageId,
           },
           vatRate,
+          delivery.checkDuplicate === true,
         );
         if (result.ok) {
           writeStatus = "נכתב";
