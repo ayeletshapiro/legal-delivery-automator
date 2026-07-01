@@ -199,6 +199,7 @@ export async function appendDeliveryToSheet(
   spreadsheetId: string,
   delivery: DeliveryRow,
   vatRate: number,
+  checkDuplicate: boolean = false,
 ): Promise<SheetWriteResult> {
   try {
     if (!spreadsheetId || !spreadsheetId.trim()) {
@@ -207,15 +208,9 @@ export async function appendDeliveryToSheet(
 
     const tabName = monthlyTabName(delivery.delivery_date);
 
-    // 1) Ensure the monthly tab exists; only write headers when first created.
-    const tabs = await listSheetTabs(spreadsheetId);
-    const existing = tabs.find((t) => t.title === tabName);
-    if (!existing) {
-      await createMonthlyTab(spreadsheetId, tabName);
-    }
-
-    // 2) Idempotency: scan column H for this message_id.
-    if (delivery.message_id) {
+    // Optional idempotency scan (opt-in). Skipped by default to avoid an extra
+    // read request against the Sheets per-minute quota.
+    if (checkDuplicate && delivery.message_id) {
       const idResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}/values/${tabName}!H:H`, { method: "GET" });
       if (idResp.ok) {
         const idData = await idResp.json();
@@ -226,10 +221,10 @@ export async function appendDeliveryToSheet(
           }
         }
       }
-      // If the read failed (e.g. brand-new tab), fall through and append.
+      // If the read failed (e.g. brand-new tab, 404), fall through and append.
     }
 
-    // 3) Build the row.
+    // Build the row.
     const hasPrice = delivery.price != null;
     const price = hasPrice ? delivery.price! : "";
     let beforeVat: number | string = "";
@@ -251,13 +246,26 @@ export async function appendDeliveryToSheet(
       delivery.message_id ?? "",
     ];
 
-    const appendResp = await gatewayFetch(
-      `/spreadsheets/${spreadsheetId}/values/${tabName}!A:H:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-      {
-        method: "POST",
-        body: JSON.stringify({ range: `${tabName}!A:H`, majorDimension: "ROWS", values: [row] }),
-      },
-    );
+    const doAppend = () =>
+      gatewayFetch(
+        `/spreadsheets/${spreadsheetId}/values/${tabName}!A:H:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        {
+          method: "POST",
+          body: JSON.stringify({ range: `${tabName}!A:H`, majorDimension: "ROWS", values: [row] }),
+        },
+      );
+
+    // Append-first: try appending directly. If the monthly tab does not exist
+    // yet, Sheets returns 400 with "Unable to parse range" — then create the
+    // tab and retry the append once.
+    let appendResp = await doAppend();
+    if (appendResp.status === 400) {
+      const body = await appendResp.clone().text().catch(() => "");
+      if (body.includes("Unable to parse range")) {
+        await createMonthlyTab(spreadsheetId, tabName);
+        appendResp = await doAppend();
+      }
+    }
 
     if (!appendResp.ok) {
       const body = await appendResp.text().catch(() => "");
@@ -266,6 +274,8 @@ export async function appendDeliveryToSheet(
         userMsg = "אין הרשאת עריכה לגיליון. ודאי שהגיליון משותף עם חשבון Google המחובר.";
       } else if (appendResp.status === 404) {
         userMsg = "הגיליון לא נמצא. בדקי שמזהה הגיליון נכון.";
+      } else if (appendResp.status === 429) {
+        userMsg = "מכסת הבקשות ל-Google Sheets חרגה. נסי שוב בעוד דקה.";
       } else {
         userMsg = `${userMsg}: ${body.slice(0, 200)}`;
       }
