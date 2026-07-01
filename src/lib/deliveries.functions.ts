@@ -34,11 +34,15 @@ export const listDeliveries = createServerFn({ method: "POST" })
 
     const { data: rows, error } = await fetchRows();
     if (error) throw error;
-    const repairableRows = (rows ?? []).filter((row) => row.write_status === "ללא גיליון");
+    const repairableRows = (rows ?? [])
+      .filter((row) => row.write_status === "ללא גיליון" || row.write_status === "שגיאה")
+      .slice(0, 10);
     if (repairableRows.length > 0) {
       const { writeDeliveryToClientSheet } = await import("./processing.server");
       const repairedMessages = new Set<string>();
-      for (const row of repairableRows) {
+      for (let i = 0; i < repairableRows.length; i++) {
+        const row = repairableRows[i];
+        if (i > 0) await new Promise((r) => setTimeout(r, 1500));
         const dedupeKey = row.message_id ?? row.id;
         if (repairedMessages.has(dedupeKey)) {
           await context.supabase.from("deliveries").update({
@@ -59,6 +63,7 @@ export const listDeliveries = createServerFn({ method: "POST" })
           contact_ordered_by: row.contact_ordered_by,
           notes: row.notes,
           price: row.price,
+          checkDuplicate: true,
         });
       }
       const { data: refreshedRows, error: refreshedError } = await fetchRows();
