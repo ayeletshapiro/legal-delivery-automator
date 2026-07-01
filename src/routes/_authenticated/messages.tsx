@@ -125,8 +125,15 @@ function MessagesPage() {
     const hasContent =
       (m.message_type === "text" && (m.raw_text || m.transcribed_text)) ||
       (m.message_type === "audio" && m.transcribed_text);
+    if (!hasContent) return false;
+    // "done" with a failed sheet write should still expose a retry button.
+    if (m.status === "done" && m.delivery_write_status === "שגיאה") return true;
     const unprocessed = !["done", "missing_client", "awaiting_clarification", "cancelled", "failed", "ignored", "transcription_failed"].includes(m.status);
-    return Boolean(hasContent && unprocessed);
+    return unprocessed;
+  }
+
+  function processLabel(m: Message): string {
+    return m.status === "done" && m.delivery_write_status === "שגיאה" ? "כתוב לגיליון מחדש" : "עבד";
   }
 
   return (
