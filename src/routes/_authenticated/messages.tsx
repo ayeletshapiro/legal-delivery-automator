@@ -69,7 +69,16 @@ function statusStyle(status: string): { cls: string; Icon: typeof CheckCircle2 }
   return { cls: "bg-amber-50 text-amber-700 border-amber-200", Icon: Clock };
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, deliveryWriteStatus }: { status: string; deliveryWriteStatus?: string | null }) {
+  // A "done" message whose sheet write failed gets a warning badge.
+  if (status === "done" && deliveryWriteStatus === "שגיאה") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        הושלם — לא נכתב לגיליון
+      </span>
+    );
+  }
   const { cls, Icon } = statusStyle(status);
   const label = statusLabels[status] ?? status;
   return (
@@ -89,6 +98,7 @@ type Message = {
   media_received: boolean;
   status: string;
   created_at: string;
+  delivery_write_status: string | null;
 };
 
 function MessagesPage() {
