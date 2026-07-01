@@ -16,6 +16,22 @@ export const listMessages = createServerFn({ method: "POST" })
     if (data.status) q = q.eq("status", data.status as any);
     const { data: rows, error } = await q;
     if (error) throw error;
-    return rows;
-  });
 
+    // Fetch delivery write statuses for these messages in a single query.
+    const messageIds = (rows ?? []).map((r) => r.id);
+    let deliveryStatusById = new Map<string, string>();
+    if (messageIds.length > 0) {
+      const { data: dels } = await context.supabase
+        .from("deliveries")
+        .select("message_id, write_status")
+        .in("message_id", messageIds);
+      for (const d of dels ?? []) {
+        if (d.message_id) deliveryStatusById.set(d.message_id, d.write_status);
+      }
+    }
+
+    return (rows ?? []).map((r) => ({
+      ...r,
+      delivery_write_status: deliveryStatusById.get(r.id) ?? null,
+    }));
+  });

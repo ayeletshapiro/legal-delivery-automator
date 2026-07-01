@@ -33,11 +33,28 @@ function authHeaders() {
 }
 
 async function gatewayFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const resp = await fetch(`${GATEWAY_URL}${path}`, {
-    ...init,
-    headers: { ...authHeaders(), ...(init.headers || {}) },
-  });
-  return resp;
+  const url = `${GATEWAY_URL}${path}`;
+  const maxAttempts = 4;
+  let resp: Response | null = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    resp = await fetch(url, {
+      ...init,
+      headers: { ...authHeaders(), ...(init.headers || {}) },
+    });
+    if (resp.status !== 429 && resp.status !== 503) return resp;
+    if (attempt === maxAttempts - 1) return resp;
+    const retryAfterHeader = resp.headers.get("Retry-After");
+    let waitMs: number;
+    const retryAfterSec = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+    if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
+      waitMs = Math.min(retryAfterSec * 1000, 15000);
+    } else {
+      const base = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
+      waitMs = Math.min(base + Math.floor(Math.random() * 500), 15000);
+    }
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+  return resp!;
 }
 
 /** Format Hebrew date as DD/MM/YYYY for display in sheet. */
@@ -65,28 +82,8 @@ export function monthlyTabName(isoDate: string): string {
   return `${m[2]}.${m[1]}`;
 }
 
-interface SheetMeta {
-  sheetId: number;
-  title: string;
-}
-
-async function listSheetTabs(spreadsheetId: string): Promise<SheetMeta[]> {
-  const resp = await gatewayFetch(`/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`, {
-    method: "GET",
-  });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(`קריאת מטא-דאטה של הגיליון נכשלה ${resp.status}: ${body.slice(0, 200)}`);
-  }
-  const data = await resp.json();
-  const sheets = (data?.sheets ?? []) as Array<{ properties?: { sheetId?: number; title?: string } }>;
-  return sheets
-    .map((s) => ({ sheetId: Number(s.properties?.sheetId ?? 0), title: String(s.properties?.title ?? "") }))
-    .filter((s) => s.title);
-}
-
-/** Create the monthly tab (RTL) and write the header row. Returns the new sheetId. */
-async function createMonthlyTab(spreadsheetId: string, title: string): Promise<number> {
+/** Create the monthly tab (RTL) and write the header row. Returns the new sheetId, or null on benign "already exists" race. */
+async function createMonthlyTab(spreadsheetId: string, title: string): Promise<number | null> {
   const addResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}:batchUpdate`, {
     method: "POST",
     body: JSON.stringify({
@@ -101,6 +98,10 @@ async function createMonthlyTab(spreadsheetId: string, title: string): Promise<n
   });
   if (!addResp.ok) {
     const body = await addResp.text().catch(() => "");
+    if (body.includes("already exists")) {
+      // Race between two concurrent messages — the tab is there, let the caller proceed.
+      return null;
+    }
     throw new Error(`יצירת לשונית חודשית נכשלה ${addResp.status}: ${body.slice(0, 200)}`);
   }
   const data = await addResp.json();
@@ -198,6 +199,7 @@ export async function appendDeliveryToSheet(
   spreadsheetId: string,
   delivery: DeliveryRow,
   vatRate: number,
+  checkDuplicate: boolean = false,
 ): Promise<SheetWriteResult> {
   try {
     if (!spreadsheetId || !spreadsheetId.trim()) {
@@ -206,15 +208,9 @@ export async function appendDeliveryToSheet(
 
     const tabName = monthlyTabName(delivery.delivery_date);
 
-    // 1) Ensure the monthly tab exists; only write headers when first created.
-    const tabs = await listSheetTabs(spreadsheetId);
-    const existing = tabs.find((t) => t.title === tabName);
-    if (!existing) {
-      await createMonthlyTab(spreadsheetId, tabName);
-    }
-
-    // 2) Idempotency: scan column H for this message_id.
-    if (delivery.message_id) {
+    // Optional idempotency scan (opt-in). Skipped by default to avoid an extra
+    // read request against the Sheets per-minute quota.
+    if (checkDuplicate && delivery.message_id) {
       const idResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}/values/${tabName}!H:H`, { method: "GET" });
       if (idResp.ok) {
         const idData = await idResp.json();
@@ -225,10 +221,10 @@ export async function appendDeliveryToSheet(
           }
         }
       }
-      // If the read failed (e.g. brand-new tab), fall through and append.
+      // If the read failed (e.g. brand-new tab, 404), fall through and append.
     }
 
-    // 3) Build the row.
+    // Build the row.
     const hasPrice = delivery.price != null;
     const price = hasPrice ? delivery.price! : "";
     let beforeVat: number | string = "";
@@ -250,13 +246,26 @@ export async function appendDeliveryToSheet(
       delivery.message_id ?? "",
     ];
 
-    const appendResp = await gatewayFetch(
-      `/spreadsheets/${spreadsheetId}/values/${tabName}!A:H:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-      {
-        method: "POST",
-        body: JSON.stringify({ range: `${tabName}!A:H`, majorDimension: "ROWS", values: [row] }),
-      },
-    );
+    const doAppend = () =>
+      gatewayFetch(
+        `/spreadsheets/${spreadsheetId}/values/${tabName}!A:H:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        {
+          method: "POST",
+          body: JSON.stringify({ range: `${tabName}!A:H`, majorDimension: "ROWS", values: [row] }),
+        },
+      );
+
+    // Append-first: try appending directly. If the monthly tab does not exist
+    // yet, Sheets returns 400 with "Unable to parse range" — then create the
+    // tab and retry the append once.
+    let appendResp = await doAppend();
+    if (appendResp.status === 400) {
+      const body = await appendResp.clone().text().catch(() => "");
+      if (body.includes("Unable to parse range")) {
+        await createMonthlyTab(spreadsheetId, tabName);
+        appendResp = await doAppend();
+      }
+    }
 
     if (!appendResp.ok) {
       const body = await appendResp.text().catch(() => "");
@@ -265,6 +274,8 @@ export async function appendDeliveryToSheet(
         userMsg = "אין הרשאת עריכה לגיליון. ודאי שהגיליון משותף עם חשבון Google המחובר.";
       } else if (appendResp.status === 404) {
         userMsg = "הגיליון לא נמצא. בדקי שמזהה הגיליון נכון.";
+      } else if (appendResp.status === 429) {
+        userMsg = "מכסת הבקשות ל-Google Sheets חרגה. נסי שוב בעוד דקה.";
       } else {
         userMsg = `${userMsg}: ${body.slice(0, 200)}`;
       }

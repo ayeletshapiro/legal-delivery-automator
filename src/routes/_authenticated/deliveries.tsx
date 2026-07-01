@@ -1,15 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { listDeliveries } from "@/lib/deliveries.functions";
+import { listDeliveries, retryDeliveryWrite } from "@/lib/deliveries.functions";
 import { listClients } from "@/lib/clients.functions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
-import { Package, CheckCircle2, Clock, AlertTriangle, FileX } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { Package, CheckCircle2, Clock, AlertTriangle, FileX, RotateCcw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/deliveries")({
   component: DeliveriesPage,
@@ -72,8 +74,10 @@ function afterVat(d: Delivery): number {
 }
 
 function DeliveriesPage() {
+  const qc = useQueryClient();
   const listFn = useServerFn(listDeliveries);
   const clientsFn = useServerFn(listClients);
+  const retryFn = useServerFn(retryDeliveryWrite);
 
   const today = new Date().toISOString().slice(0, 10);
   const [from, setFrom] = useState<string>("");
@@ -95,6 +99,16 @@ function DeliveriesPage() {
   const { data: clients } = useQuery({
     queryKey: ["clients"],
     queryFn: () => clientsFn(),
+  });
+
+  const retryMut = useMutation({
+    mutationFn: (id: string) => retryFn({ data: { id } }),
+    onSuccess: (res) => {
+      if (res?.ok) toast.success("נכתב לגיליון");
+      else toast.error(res?.writeError ?? "כתיבה לגיליון נכשלה");
+      qc.invalidateQueries({ queryKey: ["deliveries"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   return (
@@ -205,7 +219,20 @@ function DeliveriesPage() {
                       {d.price_missing ? "—" : `${afterVat(d)} ₪`}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={d.write_status} />
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={d.write_status} />
+                        {d.write_status === "שגיאה" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={retryMut.isPending}
+                            onClick={() => retryMut.mutate(d.id)}
+                          >
+                            <RotateCcw className="ml-1.5 h-3.5 w-3.5" />
+                            נסה שוב
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -250,6 +277,21 @@ function DeliveriesPage() {
 
                 {d.notes && (
                   <p className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{d.notes}</p>
+                )}
+
+                {d.write_status === "שגיאה" && (
+                  <div className="mt-3 border-t pt-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      disabled={retryMut.isPending}
+                      onClick={() => retryMut.mutate(d.id)}
+                    >
+                      <RotateCcw className="ml-1.5 h-4 w-4" />
+                      נסה שוב
+                    </Button>
+                  </div>
                 )}
               </Card>
             ))}

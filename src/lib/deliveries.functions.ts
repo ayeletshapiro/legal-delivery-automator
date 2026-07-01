@@ -34,11 +34,15 @@ export const listDeliveries = createServerFn({ method: "POST" })
 
     const { data: rows, error } = await fetchRows();
     if (error) throw error;
-    const repairableRows = (rows ?? []).filter((row) => row.write_status === "ללא גיליון");
+    const repairableRows = (rows ?? [])
+      .filter((row) => row.write_status === "ללא גיליון" || row.write_status === "שגיאה")
+      .slice(0, 10);
     if (repairableRows.length > 0) {
       const { writeDeliveryToClientSheet } = await import("./processing.server");
       const repairedMessages = new Set<string>();
-      for (const row of repairableRows) {
+      for (let i = 0; i < repairableRows.length; i++) {
+        const row = repairableRows[i];
+        if (i > 0) await new Promise((r) => setTimeout(r, 1500));
         const dedupeKey = row.message_id ?? row.id;
         if (repairedMessages.has(dedupeKey)) {
           await context.supabase.from("deliveries").update({
@@ -59,6 +63,7 @@ export const listDeliveries = createServerFn({ method: "POST" })
           contact_ordered_by: row.contact_ordered_by,
           notes: row.notes,
           price: row.price,
+          checkDuplicate: true,
         });
       }
       const { data: refreshedRows, error: refreshedError } = await fetchRows();
@@ -123,3 +128,32 @@ export const deleteDelivery = createServerFn({ method: "POST" })
     if (error) throw error;
     return { ok: true };
   });
+
+export const retryDeliveryWrite = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: row, error } = await context.supabase
+      .from("deliveries")
+      .select("id, message_id, user_id, client_id, delivery_date, description, contact_ordered_by, notes, price")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) throw new Error("שליחות לא נמצאה");
+    if (row.user_id !== context.userId) throw new Error("אין הרשאה לבצע פעולה זו");
+    const { writeDeliveryToClientSheet } = await import("./processing.server");
+    const res = await writeDeliveryToClientSheet(context.supabase, {
+      deliveryId: row.id,
+      messageId: row.message_id,
+      userId: row.user_id,
+      clientId: row.client_id,
+      delivery_date: row.delivery_date,
+      description: row.description,
+      contact_ordered_by: row.contact_ordered_by,
+      notes: row.notes,
+      price: row.price,
+      checkDuplicate: true,
+    });
+    return { ok: res.writeStatus === "נכתב", writeStatus: res.writeStatus, writeError: res.writeError };
+  });
+

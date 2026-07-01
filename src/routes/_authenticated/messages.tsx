@@ -69,7 +69,16 @@ function statusStyle(status: string): { cls: string; Icon: typeof CheckCircle2 }
   return { cls: "bg-amber-50 text-amber-700 border-amber-200", Icon: Clock };
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, deliveryWriteStatus }: { status: string; deliveryWriteStatus?: string | null }) {
+  // A "done" message whose sheet write failed gets a warning badge.
+  if (status === "done" && deliveryWriteStatus === "שגיאה") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        הושלם — לא נכתב לגיליון
+      </span>
+    );
+  }
   const { cls, Icon } = statusStyle(status);
   const label = statusLabels[status] ?? status;
   return (
@@ -89,6 +98,7 @@ type Message = {
   media_received: boolean;
   status: string;
   created_at: string;
+  delivery_write_status: string | null;
 };
 
 function MessagesPage() {
@@ -115,8 +125,15 @@ function MessagesPage() {
     const hasContent =
       (m.message_type === "text" && (m.raw_text || m.transcribed_text)) ||
       (m.message_type === "audio" && m.transcribed_text);
+    if (!hasContent) return false;
+    // "done" with a failed sheet write should still expose a retry button.
+    if (m.status === "done" && m.delivery_write_status === "שגיאה") return true;
     const unprocessed = !["done", "missing_client", "awaiting_clarification", "cancelled", "failed", "ignored", "transcription_failed"].includes(m.status);
-    return Boolean(hasContent && unprocessed);
+    return unprocessed;
+  }
+
+  function processLabel(m: Message): string {
+    return m.status === "done" && m.delivery_write_status === "שגיאה" ? "כתוב לגיליון מחדש" : "עבד";
   }
 
   return (
@@ -169,6 +186,7 @@ function MessagesPage() {
                   <TableHead className="text-right">סוג</TableHead>
                   <TableHead className="text-right">תוכן</TableHead>
                   <TableHead className="text-right">סטטוס</TableHead>
+                  <TableHead className="text-right">פעולה</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -192,7 +210,20 @@ function MessagesPage() {
                         {m.transcribed_text || m.raw_text || (m.media_received ? "(מדיה)" : "—")}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={m.status} />
+                        <StatusBadge status={m.status} deliveryWriteStatus={m.delivery_write_status} />
+                      </TableCell>
+                      <TableCell>
+                        {canProcess(m) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={processMut.isPending}
+                            onClick={() => processMut.mutate(m.id)}
+                          >
+                            <Play className="ml-1.5 h-3.5 w-3.5" />
+                            {processLabel(m)}
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -214,7 +245,7 @@ function MessagesPage() {
                         {m.sender_phone}
                       </span>
                     </div>
-                    <StatusBadge status={m.status} />
+                    <StatusBadge status={m.status} deliveryWriteStatus={m.delivery_write_status} />
                   </div>
 
                   <p className="mb-2 text-sm">{content}</p>
@@ -230,7 +261,7 @@ function MessagesPage() {
                         onClick={() => processMut.mutate(m.id)}
                       >
                           <Play className="ml-1.5 h-4 w-4" />
-                          עבד
+                          {processLabel(m)}
                       </Button>
                     </div>
                   )}

@@ -286,6 +286,8 @@ interface DeliverySheetWriteInput {
   contact_ordered_by: string | null;
   notes: string | null;
   price: number | null;
+  /** When true, scan column H first to avoid duplicating an already-written row. */
+  checkDuplicate?: boolean;
 }
 
 export async function writeDeliveryToClientSheet(
@@ -344,6 +346,7 @@ export async function writeDeliveryToClientSheet(
             message_id: delivery.messageId,
           },
           vatRate,
+          delivery.checkDuplicate === true,
         );
         if (result.ok) {
           writeStatus = "נכתב";
@@ -545,6 +548,7 @@ export async function processIncomingMessage(
           contact_ordered_by: existingDelivery.contact_ordered_by,
           notes: existingDelivery.notes,
           price: existingDelivery.price,
+          checkDuplicate: true,
         });
       }
       await supabase
