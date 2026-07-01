@@ -219,7 +219,20 @@ function DeliveriesPage() {
                       {d.price_missing ? "—" : `${afterVat(d)} ₪`}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={d.write_status} />
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={d.write_status} />
+                        {d.write_status === "שגיאה" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={retryMut.isPending}
+                            onClick={() => retryMut.mutate(d.id)}
+                          >
+                            <RotateCcw className="ml-1.5 h-3.5 w-3.5" />
+                            נסה שוב
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
