@@ -82,28 +82,8 @@ export function monthlyTabName(isoDate: string): string {
   return `${m[2]}.${m[1]}`;
 }
 
-interface SheetMeta {
-  sheetId: number;
-  title: string;
-}
-
-async function listSheetTabs(spreadsheetId: string): Promise<SheetMeta[]> {
-  const resp = await gatewayFetch(`/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`, {
-    method: "GET",
-  });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(`קריאת מטא-דאטה של הגיליון נכשלה ${resp.status}: ${body.slice(0, 200)}`);
-  }
-  const data = await resp.json();
-  const sheets = (data?.sheets ?? []) as Array<{ properties?: { sheetId?: number; title?: string } }>;
-  return sheets
-    .map((s) => ({ sheetId: Number(s.properties?.sheetId ?? 0), title: String(s.properties?.title ?? "") }))
-    .filter((s) => s.title);
-}
-
-/** Create the monthly tab (RTL) and write the header row. Returns the new sheetId. */
-async function createMonthlyTab(spreadsheetId: string, title: string): Promise<number> {
+/** Create the monthly tab (RTL) and write the header row. Returns the new sheetId, or null on benign "already exists" race. */
+async function createMonthlyTab(spreadsheetId: string, title: string): Promise<number | null> {
   const addResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}:batchUpdate`, {
     method: "POST",
     body: JSON.stringify({
@@ -118,6 +98,10 @@ async function createMonthlyTab(spreadsheetId: string, title: string): Promise<n
   });
   if (!addResp.ok) {
     const body = await addResp.text().catch(() => "");
+    if (body.includes("already exists")) {
+      // Race between two concurrent messages — the tab is there, let the caller proceed.
+      return null;
+    }
     throw new Error(`יצירת לשונית חודשית נכשלה ${addResp.status}: ${body.slice(0, 200)}`);
   }
   const data = await addResp.json();
