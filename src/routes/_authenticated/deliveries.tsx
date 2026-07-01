@@ -278,6 +278,21 @@ function DeliveriesPage() {
                 {d.notes && (
                   <p className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{d.notes}</p>
                 )}
+
+                {d.write_status === "שגיאה" && (
+                  <div className="mt-3 border-t pt-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      disabled={retryMut.isPending}
+                      onClick={() => retryMut.mutate(d.id)}
+                    >
+                      <RotateCcw className="ml-1.5 h-4 w-4" />
+                      נסה שוב
+                    </Button>
+                  </div>
+                )}
               </Card>
             ))}
           </div>
