@@ -101,6 +101,16 @@ function DeliveriesPage() {
     queryFn: () => clientsFn(),
   });
 
+  const retryMut = useMutation({
+    mutationFn: (id: string) => retryFn({ data: { id } }),
+    onSuccess: (res) => {
+      if (res?.ok) toast.success("נכתב לגיליון");
+      else toast.error(res?.writeError ?? "כתיבה לגיליון נכשלה");
+      qc.invalidateQueries({ queryKey: ["deliveries"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
