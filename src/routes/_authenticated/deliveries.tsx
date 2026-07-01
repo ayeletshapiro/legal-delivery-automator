@@ -74,8 +74,10 @@ function afterVat(d: Delivery): number {
 }
 
 function DeliveriesPage() {
+  const qc = useQueryClient();
   const listFn = useServerFn(listDeliveries);
   const clientsFn = useServerFn(listClients);
+  const retryFn = useServerFn(retryDeliveryWrite);
 
   const today = new Date().toISOString().slice(0, 10);
   const [from, setFrom] = useState<string>("");
