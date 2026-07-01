@@ -286,6 +286,8 @@ interface DeliverySheetWriteInput {
   contact_ordered_by: string | null;
   notes: string | null;
   price: number | null;
+  /** When true, scan column H first to avoid duplicating an already-written row. */
+  checkDuplicate?: boolean;
 }
 
 export async function writeDeliveryToClientSheet(
