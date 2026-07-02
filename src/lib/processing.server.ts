@@ -288,6 +288,8 @@ interface DeliverySheetWriteInput {
   price: number | null;
   /** When true, scan column H first to avoid duplicating an already-written row. */
   checkDuplicate?: boolean;
+  /** When true, use gatewayFetch's fast retry profile (webhook path with Twilio timeout). */
+  fast?: boolean;
 }
 
 export async function writeDeliveryToClientSheet(
@@ -347,6 +349,7 @@ export async function writeDeliveryToClientSheet(
           },
           vatRate,
           delivery.checkDuplicate === true,
+          delivery.fast === true,
         );
         if (result.ok) {
           writeStatus = "נכתב";
@@ -389,6 +392,19 @@ export async function writeDeliveryToClientSheet(
     .eq("id", delivery.deliveryId);
   if (updateDeliveryErr) throw updateDeliveryErr;
 
+  if (writeStatus === "נכתב" && delivery.messageId) {
+    try {
+      await supabase
+        .from("processing_errors")
+        .update({ resolved_at: new Date().toISOString() })
+        .eq("message_id", delivery.messageId)
+        .eq("error_type", "sheet_write_failed")
+        .is("resolved_at", null);
+    } catch {
+      // best-effort
+    }
+  }
+
   if (writeStatus === "שגיאה" && writeError && delivery.messageId) {
     await supabase.from("processing_errors").insert({
       message_id: delivery.messageId,
@@ -400,6 +416,7 @@ export async function writeDeliveryToClientSheet(
 
   return { writeStatus, writeError };
 }
+
 
 export interface ProcessResult {
   ok: boolean;
@@ -559,6 +576,15 @@ export async function processIncomingMessage(
           processed_at: new Date().toISOString(),
         })
         .eq("id", messageId);
+      try {
+        await supabase
+          .from("processing_errors")
+          .update({ resolved_at: new Date().toISOString() })
+          .eq("message_id", messageId)
+          .is("resolved_at", null);
+      } catch {
+        // best-effort
+      }
       return { ok: true, status: "done", deliveryId: existingDelivery.id };
     }
 
@@ -591,6 +617,7 @@ export async function processIncomingMessage(
       contact_ordered_by: parsed.contact_ordered_by,
       notes: mergeNotes(parsed.notes),
       price: parsed.price,
+      fast: true,
     });
 
     await supabase
@@ -601,6 +628,15 @@ export async function processIncomingMessage(
         processed_at: new Date().toISOString(),
       })
       .eq("id", messageId);
+    try {
+      await supabase
+        .from("processing_errors")
+        .update({ resolved_at: new Date().toISOString() })
+        .eq("message_id", messageId)
+        .is("resolved_at", null);
+    } catch {
+      // best-effort
+    }
 
     if (writeRes.writeStatus === "נכתב" && msg.sender_phone) {
       const { data: c } = await supabase

@@ -32,9 +32,15 @@ function authHeaders() {
   };
 }
 
-async function gatewayFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function gatewayFetch(
+  path: string,
+  init: RequestInit = {},
+  opts?: { fast?: boolean },
+): Promise<Response> {
   const url = `${GATEWAY_URL}${path}`;
-  const maxAttempts = 4;
+  const fast = opts?.fast === true;
+  const maxAttempts = fast ? 3 : 4;
+  const capMs = fast ? 4000 : 15000;
   let resp: Response | null = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     resp = await fetch(url, {
@@ -47,10 +53,10 @@ async function gatewayFetch(path: string, init: RequestInit = {}): Promise<Respo
     let waitMs: number;
     const retryAfterSec = retryAfterHeader ? Number(retryAfterHeader) : NaN;
     if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
-      waitMs = Math.min(retryAfterSec * 1000, 15000);
+      waitMs = Math.min(retryAfterSec * 1000, capMs);
     } else {
-      const base = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
-      waitMs = Math.min(base + Math.floor(Math.random() * 500), 15000);
+      const base = fast ? (attempt === 0 ? 1000 : 2000) : Math.pow(2, attempt + 1) * 1000; // fast: 1s,2s | default: 2s,4s,8s
+      waitMs = Math.min(base + Math.floor(Math.random() * 500), capMs);
     }
     await new Promise((r) => setTimeout(r, waitMs));
   }
@@ -83,19 +89,27 @@ export function monthlyTabName(isoDate: string): string {
 }
 
 /** Create the monthly tab (RTL) and write the header row. Returns the new sheetId, or null on benign "already exists" race. */
-async function createMonthlyTab(spreadsheetId: string, title: string): Promise<number | null> {
-  const addResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}:batchUpdate`, {
-    method: "POST",
-    body: JSON.stringify({
-      requests: [
-        {
-          addSheet: {
-            properties: { title, rightToLeft: true },
+async function createMonthlyTab(
+  spreadsheetId: string,
+  title: string,
+  fast?: boolean,
+): Promise<number | null> {
+  const addResp = await gatewayFetch(
+    `/spreadsheets/${spreadsheetId}:batchUpdate`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        requests: [
+          {
+            addSheet: {
+              properties: { title, rightToLeft: true },
+            },
           },
-        },
-      ],
-    }),
-  });
+        ],
+      }),
+    },
+    { fast },
+  );
   if (!addResp.ok) {
     const body = await addResp.text().catch(() => "");
     if (body.includes("already exists")) {
@@ -110,45 +124,53 @@ async function createMonthlyTab(spreadsheetId: string, title: string): Promise<n
   // Format the new tab: hide the _msg_id column (H) and make the
   // description column (B) wrap text + be wider so it doesn't overflow.
   // Column indices are 0-based: A=0 ... B=1 (description) ... H=7 (_msg_id).
-  await gatewayFetch(`/spreadsheets/${spreadsheetId}:batchUpdate`, {
-    method: "POST",
-    body: JSON.stringify({
-      requests: [
-        {
-          // Hide column H (_msg_id) from view — data stays for idempotency.
-          updateDimensionProperties: {
-            range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 7, endIndex: 8 },
-            properties: { hiddenByUser: true },
-            fields: "hiddenByUser",
+  await gatewayFetch(
+    `/spreadsheets/${spreadsheetId}:batchUpdate`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        requests: [
+          {
+            // Hide column H (_msg_id) from view — data stays for idempotency.
+            updateDimensionProperties: {
+              range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 7, endIndex: 8 },
+              properties: { hiddenByUser: true },
+              fields: "hiddenByUser",
+            },
           },
-        },
-        {
-          // Widen the description column (B) to ~360px.
-          updateDimensionProperties: {
-            range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 2 },
-            properties: { pixelSize: 360 },
-            fields: "pixelSize",
+          {
+            // Widen the description column (B) to ~360px.
+            updateDimensionProperties: {
+              range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 2 },
+              properties: { pixelSize: 360 },
+              fields: "pixelSize",
+            },
           },
-        },
-        {
-          // Wrap text in the description column (B) so long text stays inside the cell.
-          repeatCell: {
-            range: { sheetId: newSheetId, startColumnIndex: 1, endColumnIndex: 2 },
-            cell: { userEnteredFormat: { wrapStrategy: "WRAP" } },
-            fields: "userEnteredFormat.wrapStrategy",
+          {
+            // Wrap text in the description column (B) so long text stays inside the cell.
+            repeatCell: {
+              range: { sheetId: newSheetId, startColumnIndex: 1, endColumnIndex: 2 },
+              cell: { userEnteredFormat: { wrapStrategy: "WRAP" } },
+              fields: "userEnteredFormat.wrapStrategy",
+            },
           },
-        },
-      ],
-    }),
-  }).catch(() => {
+        ],
+      }),
+    },
+    { fast },
+  ).catch(() => {
     // Formatting is cosmetic — never fail the whole write because of it.
   });
 
   const range = `${title}!A1:H1`;
-  const putResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`, {
-    method: "PUT",
-    body: JSON.stringify({ range, majorDimension: "ROWS", values: [HEADERS] }),
-  });
+  const putResp = await gatewayFetch(
+    `/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ range, majorDimension: "ROWS", values: [HEADERS] }),
+    },
+    { fast },
+  );
   if (!putResp.ok) {
     const body = await putResp.text().catch(() => "");
     throw new Error(`כתיבת כותרות נכשלה ${putResp.status}: ${body.slice(0, 200)}`);
@@ -200,6 +222,7 @@ export async function appendDeliveryToSheet(
   delivery: DeliveryRow,
   vatRate: number,
   checkDuplicate: boolean = false,
+  fast?: boolean,
 ): Promise<SheetWriteResult> {
   try {
     if (!spreadsheetId || !spreadsheetId.trim()) {
@@ -211,7 +234,11 @@ export async function appendDeliveryToSheet(
     // Optional idempotency scan (opt-in). Skipped by default to avoid an extra
     // read request against the Sheets per-minute quota.
     if (checkDuplicate && delivery.message_id) {
-      const idResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}/values/${tabName}!H:H`, { method: "GET" });
+      const idResp = await gatewayFetch(
+        `/spreadsheets/${spreadsheetId}/values/${tabName}!H:H`,
+        { method: "GET" },
+        { fast },
+      );
       if (idResp.ok) {
         const idData = await idResp.json();
         const values = (idData?.values ?? []) as string[][];
@@ -253,6 +280,7 @@ export async function appendDeliveryToSheet(
           method: "POST",
           body: JSON.stringify({ range: `${tabName}!A:H`, majorDimension: "ROWS", values: [row] }),
         },
+        { fast },
       );
 
     // Append-first: try appending directly. If the monthly tab does not exist
@@ -262,10 +290,15 @@ export async function appendDeliveryToSheet(
     if (appendResp.status === 400) {
       const body = await appendResp.clone().text().catch(() => "");
       if (body.includes("Unable to parse range")) {
-        await createMonthlyTab(spreadsheetId, tabName);
+        const created = await createMonthlyTab(spreadsheetId, tabName, fast);
+        if (created === null) {
+          // Concurrent request created the tab and may still be writing headers.
+          await new Promise((r) => setTimeout(r, 2000));
+        }
         appendResp = await doAppend();
       }
     }
+
 
     if (!appendResp.ok) {
       const body = await appendResp.text().catch(() => "");
