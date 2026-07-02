@@ -576,6 +576,15 @@ export async function processIncomingMessage(
           processed_at: new Date().toISOString(),
         })
         .eq("id", messageId);
+      try {
+        await supabase
+          .from("processing_errors")
+          .update({ resolved_at: new Date().toISOString() })
+          .eq("message_id", messageId)
+          .is("resolved_at", null);
+      } catch {
+        // best-effort
+      }
       return { ok: true, status: "done", deliveryId: existingDelivery.id };
     }
 
