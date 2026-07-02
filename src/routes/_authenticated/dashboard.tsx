@@ -1,9 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { getDashboardStats } from "@/lib/dashboard.functions";
+import { repairFailedWrites } from "@/lib/deliveries.functions";
 import { Card } from "@/components/ui/card";
 import { MessageSquare, AlertCircle, Users, Truck, Package } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
