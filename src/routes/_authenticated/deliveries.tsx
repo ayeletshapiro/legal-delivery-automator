@@ -221,7 +221,7 @@ function DeliveriesPage() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <StatusBadge status={d.write_status} />
-                        {d.write_status === "שגיאה" && (
+                        {(d.write_status === "שגיאה" || d.write_status === "ללא גיליון") && (
                           <Button
                             size="sm"
                             variant="outline"
