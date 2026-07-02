@@ -617,6 +617,7 @@ export async function processIncomingMessage(
       contact_ordered_by: parsed.contact_ordered_by,
       notes: mergeNotes(parsed.notes),
       price: parsed.price,
+      fast: true,
     });
 
     await supabase
@@ -627,6 +628,15 @@ export async function processIncomingMessage(
         processed_at: new Date().toISOString(),
       })
       .eq("id", messageId);
+    try {
+      await supabase
+        .from("processing_errors")
+        .update({ resolved_at: new Date().toISOString() })
+        .eq("message_id", messageId)
+        .is("resolved_at", null);
+    } catch {
+      // best-effort
+    }
 
     if (writeRes.writeStatus === "נכתב" && msg.sender_phone) {
       const { data: c } = await supabase
