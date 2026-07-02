@@ -279,7 +279,7 @@ function DeliveriesPage() {
                   <p className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{d.notes}</p>
                 )}
 
-                {d.write_status === "שגיאה" && (
+                {(d.write_status === "שגיאה" || d.write_status === "ללא גיליון") && (
                   <div className="mt-3 border-t pt-3">
                     <Button
                       size="sm"
