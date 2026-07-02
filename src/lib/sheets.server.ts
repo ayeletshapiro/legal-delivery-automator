@@ -89,19 +89,27 @@ export function monthlyTabName(isoDate: string): string {
 }
 
 /** Create the monthly tab (RTL) and write the header row. Returns the new sheetId, or null on benign "already exists" race. */
-async function createMonthlyTab(spreadsheetId: string, title: string): Promise<number | null> {
-  const addResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}:batchUpdate`, {
-    method: "POST",
-    body: JSON.stringify({
-      requests: [
-        {
-          addSheet: {
-            properties: { title, rightToLeft: true },
+async function createMonthlyTab(
+  spreadsheetId: string,
+  title: string,
+  fast?: boolean,
+): Promise<number | null> {
+  const addResp = await gatewayFetch(
+    `/spreadsheets/${spreadsheetId}:batchUpdate`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        requests: [
+          {
+            addSheet: {
+              properties: { title, rightToLeft: true },
+            },
           },
-        },
-      ],
-    }),
-  });
+        ],
+      }),
+    },
+    { fast },
+  );
   if (!addResp.ok) {
     const body = await addResp.text().catch(() => "");
     if (body.includes("already exists")) {
@@ -116,45 +124,53 @@ async function createMonthlyTab(spreadsheetId: string, title: string): Promise<n
   // Format the new tab: hide the _msg_id column (H) and make the
   // description column (B) wrap text + be wider so it doesn't overflow.
   // Column indices are 0-based: A=0 ... B=1 (description) ... H=7 (_msg_id).
-  await gatewayFetch(`/spreadsheets/${spreadsheetId}:batchUpdate`, {
-    method: "POST",
-    body: JSON.stringify({
-      requests: [
-        {
-          // Hide column H (_msg_id) from view — data stays for idempotency.
-          updateDimensionProperties: {
-            range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 7, endIndex: 8 },
-            properties: { hiddenByUser: true },
-            fields: "hiddenByUser",
+  await gatewayFetch(
+    `/spreadsheets/${spreadsheetId}:batchUpdate`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        requests: [
+          {
+            // Hide column H (_msg_id) from view — data stays for idempotency.
+            updateDimensionProperties: {
+              range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 7, endIndex: 8 },
+              properties: { hiddenByUser: true },
+              fields: "hiddenByUser",
+            },
           },
-        },
-        {
-          // Widen the description column (B) to ~360px.
-          updateDimensionProperties: {
-            range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 2 },
-            properties: { pixelSize: 360 },
-            fields: "pixelSize",
+          {
+            // Widen the description column (B) to ~360px.
+            updateDimensionProperties: {
+              range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 2 },
+              properties: { pixelSize: 360 },
+              fields: "pixelSize",
+            },
           },
-        },
-        {
-          // Wrap text in the description column (B) so long text stays inside the cell.
-          repeatCell: {
-            range: { sheetId: newSheetId, startColumnIndex: 1, endColumnIndex: 2 },
-            cell: { userEnteredFormat: { wrapStrategy: "WRAP" } },
-            fields: "userEnteredFormat.wrapStrategy",
+          {
+            // Wrap text in the description column (B) so long text stays inside the cell.
+            repeatCell: {
+              range: { sheetId: newSheetId, startColumnIndex: 1, endColumnIndex: 2 },
+              cell: { userEnteredFormat: { wrapStrategy: "WRAP" } },
+              fields: "userEnteredFormat.wrapStrategy",
+            },
           },
-        },
-      ],
-    }),
-  }).catch(() => {
+        ],
+      }),
+    },
+    { fast },
+  ).catch(() => {
     // Formatting is cosmetic — never fail the whole write because of it.
   });
 
   const range = `${title}!A1:H1`;
-  const putResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`, {
-    method: "PUT",
-    body: JSON.stringify({ range, majorDimension: "ROWS", values: [HEADERS] }),
-  });
+  const putResp = await gatewayFetch(
+    `/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ range, majorDimension: "ROWS", values: [HEADERS] }),
+    },
+    { fast },
+  );
   if (!putResp.ok) {
     const body = await putResp.text().catch(() => "");
     throw new Error(`כתיבת כותרות נכשלה ${putResp.status}: ${body.slice(0, 200)}`);
