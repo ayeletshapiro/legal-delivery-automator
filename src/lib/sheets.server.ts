@@ -222,6 +222,7 @@ export async function appendDeliveryToSheet(
   delivery: DeliveryRow,
   vatRate: number,
   checkDuplicate: boolean = false,
+  fast?: boolean,
 ): Promise<SheetWriteResult> {
   try {
     if (!spreadsheetId || !spreadsheetId.trim()) {
@@ -233,7 +234,11 @@ export async function appendDeliveryToSheet(
     // Optional idempotency scan (opt-in). Skipped by default to avoid an extra
     // read request against the Sheets per-minute quota.
     if (checkDuplicate && delivery.message_id) {
-      const idResp = await gatewayFetch(`/spreadsheets/${spreadsheetId}/values/${tabName}!H:H`, { method: "GET" });
+      const idResp = await gatewayFetch(
+        `/spreadsheets/${spreadsheetId}/values/${tabName}!H:H`,
+        { method: "GET" },
+        { fast },
+      );
       if (idResp.ok) {
         const idData = await idResp.json();
         const values = (idData?.values ?? []) as string[][];
@@ -275,6 +280,7 @@ export async function appendDeliveryToSheet(
           method: "POST",
           body: JSON.stringify({ range: `${tabName}!A:H`, majorDimension: "ROWS", values: [row] }),
         },
+        { fast },
       );
 
     // Append-first: try appending directly. If the monthly tab does not exist
@@ -284,10 +290,15 @@ export async function appendDeliveryToSheet(
     if (appendResp.status === 400) {
       const body = await appendResp.clone().text().catch(() => "");
       if (body.includes("Unable to parse range")) {
-        await createMonthlyTab(spreadsheetId, tabName);
+        const created = await createMonthlyTab(spreadsheetId, tabName, fast);
+        if (created === null) {
+          // Concurrent request created the tab and may still be writing headers.
+          await new Promise((r) => setTimeout(r, 2000));
+        }
         appendResp = await doAppend();
       }
     }
+
 
     if (!appendResp.ok) {
       const body = await appendResp.text().catch(() => "");
