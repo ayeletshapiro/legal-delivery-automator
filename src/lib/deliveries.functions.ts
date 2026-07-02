@@ -117,3 +117,45 @@ export const retryDeliveryWrite = createServerFn({ method: "POST" })
     return { ok: res.writeStatus === "נכתב", writeStatus: res.writeStatus, writeError: res.writeError };
   });
 
+export const repairFailedWrites = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: rows, error } = await context.supabase
+      .from("deliveries")
+      .select("id, message_id, user_id, client_id, delivery_date, description, contact_ordered_by, notes, price")
+      .eq("user_id", context.userId)
+      .in("write_status", ["שגיאה", "ללא גיליון"])
+      .order("created_at", { ascending: true })
+      .limit(3);
+    if (error) throw error;
+    const list = rows ?? [];
+    let repaired = 0;
+    if (list.length === 0) return { attempted: 0, repaired: 0 };
+    const { writeDeliveryToClientSheet } = await import("./processing.server");
+    for (let i = 0; i < list.length; i++) {
+      const row = list[i];
+      try {
+        const res = await writeDeliveryToClientSheet(context.supabase, {
+          deliveryId: row.id,
+          messageId: row.message_id,
+          userId: row.user_id,
+          clientId: row.client_id,
+          delivery_date: row.delivery_date,
+          description: row.description,
+          contact_ordered_by: row.contact_ordered_by,
+          notes: row.notes,
+          price: row.price,
+          checkDuplicate: true,
+        });
+        if (res.writeStatus === "נכתב") repaired++;
+      } catch {
+        // Swallow per-row failures so one bad row never blocks the others.
+      }
+      if (i < list.length - 1) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+    return { attempted: list.length, repaired };
+  });
+
+

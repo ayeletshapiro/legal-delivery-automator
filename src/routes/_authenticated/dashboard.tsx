@@ -1,9 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { getDashboardStats } from "@/lib/dashboard.functions";
+import { repairFailedWrites } from "@/lib/deliveries.functions";
 import { Card } from "@/components/ui/card";
 import { MessageSquare, AlertCircle, Users, Truck, Package } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
@@ -20,10 +24,33 @@ function greeting(): string {
 
 function Dashboard() {
   const fetcher = useServerFn(getDashboardStats);
+  const repair = useServerFn(repairFailedWrites);
+  const queryClient = useQueryClient();
   const { data } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: () => fetcher(),
   });
+
+  const ranRef = useRef(false);
+  useEffect(() => {
+    if (!data) return;
+    if (ranRef.current) return;
+    ranRef.current = true;
+    repair()
+      .then((res) => {
+        if (res && res.repaired > 0) {
+          toast.success(`תוקנו ${res.repaired} שליחויות שלא נכתבו לגיליון`);
+          queryClient.invalidateQueries({ queryKey: ["deliveries"] });
+          queryClient.invalidateQueries({ queryKey: ["messages"] });
+          queryClient.invalidateQueries({ queryKey: ["errors"] });
+          queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+        }
+      })
+      .catch(() => {
+        // Silent: background self-repair must never surface errors to the user.
+      });
+  }, [data, repair, queryClient]);
+
 
   if (!data) return <div className="text-muted-foreground">טוען...</div>;
 
