@@ -32,9 +32,15 @@ function authHeaders() {
   };
 }
 
-async function gatewayFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function gatewayFetch(
+  path: string,
+  init: RequestInit = {},
+  opts?: { fast?: boolean },
+): Promise<Response> {
   const url = `${GATEWAY_URL}${path}`;
-  const maxAttempts = 4;
+  const fast = opts?.fast === true;
+  const maxAttempts = fast ? 3 : 4;
+  const capMs = fast ? 4000 : 15000;
   let resp: Response | null = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     resp = await fetch(url, {
@@ -47,10 +53,10 @@ async function gatewayFetch(path: string, init: RequestInit = {}): Promise<Respo
     let waitMs: number;
     const retryAfterSec = retryAfterHeader ? Number(retryAfterHeader) : NaN;
     if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
-      waitMs = Math.min(retryAfterSec * 1000, 15000);
+      waitMs = Math.min(retryAfterSec * 1000, capMs);
     } else {
-      const base = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
-      waitMs = Math.min(base + Math.floor(Math.random() * 500), 15000);
+      const base = fast ? (attempt === 0 ? 1000 : 2000) : Math.pow(2, attempt + 1) * 1000; // fast: 1s,2s | default: 2s,4s,8s
+      waitMs = Math.min(base + Math.floor(Math.random() * 500), capMs);
     }
     await new Promise((r) => setTimeout(r, waitMs));
   }
