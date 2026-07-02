@@ -392,6 +392,19 @@ export async function writeDeliveryToClientSheet(
     .eq("id", delivery.deliveryId);
   if (updateDeliveryErr) throw updateDeliveryErr;
 
+  if (writeStatus === "נכתב" && delivery.messageId) {
+    try {
+      await supabase
+        .from("processing_errors")
+        .update({ resolved_at: new Date().toISOString() })
+        .eq("message_id", delivery.messageId)
+        .eq("error_type", "sheet_write_failed")
+        .is("resolved_at", null);
+    } catch {
+      // best-effort
+    }
+  }
+
   if (writeStatus === "שגיאה" && writeError && delivery.messageId) {
     await supabase.from("processing_errors").insert({
       message_id: delivery.messageId,
@@ -403,6 +416,7 @@ export async function writeDeliveryToClientSheet(
 
   return { writeStatus, writeError };
 }
+
 
 export interface ProcessResult {
   ok: boolean;
