@@ -349,6 +349,7 @@ export async function writeDeliveryToClientSheet(
           },
           vatRate,
           delivery.checkDuplicate === true,
+          delivery.fast === true,
         );
         if (result.ok) {
           writeStatus = "נכתב";
