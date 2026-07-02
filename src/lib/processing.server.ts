@@ -288,6 +288,8 @@ interface DeliverySheetWriteInput {
   price: number | null;
   /** When true, scan column H first to avoid duplicating an already-written row. */
   checkDuplicate?: boolean;
+  /** When true, use gatewayFetch's fast retry profile (webhook path with Twilio timeout). */
+  fast?: boolean;
 }
 
 export async function writeDeliveryToClientSheet(
