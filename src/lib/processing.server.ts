@@ -581,6 +581,7 @@ export async function processIncomingMessage(
           .from("processing_errors")
           .update({ resolved_at: new Date().toISOString() })
           .eq("message_id", messageId)
+          .neq("error_type", "sheet_write_failed")
           .is("resolved_at", null);
       } catch {
         // best-effort
@@ -633,6 +634,7 @@ export async function processIncomingMessage(
         .from("processing_errors")
         .update({ resolved_at: new Date().toISOString() })
         .eq("message_id", messageId)
+        .neq("error_type", "sheet_write_failed")
         .is("resolved_at", null);
     } catch {
       // best-effort
