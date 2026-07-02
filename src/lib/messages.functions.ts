@@ -26,7 +26,16 @@ export const listMessages = createServerFn({ method: "POST" })
         .select("message_id, write_status")
         .in("message_id", messageIds);
       for (const d of dels ?? []) {
-        if (d.message_id) deliveryStatusById.set(d.message_id, d.write_status);
+        if (!d.message_id) continue;
+        if (d.write_status === "skipped") continue;
+        const existing = deliveryStatusById.get(d.message_id);
+        if (existing === undefined) {
+          deliveryStatusById.set(d.message_id, d.write_status);
+        } else if (existing === "שגיאה") {
+          // errors always win — keep it
+        } else if (d.write_status === "שגיאה") {
+          deliveryStatusById.set(d.message_id, "שגיאה");
+        }
       }
     }
 
