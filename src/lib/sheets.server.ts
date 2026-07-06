@@ -22,7 +22,7 @@ export interface DeliveryRow {
 
 function authHeaders() {
   const lovableKey = process.env.LOVABLE_API_KEY;
-  const connKey = process.env.GOOGLE_SHEETS_API_KEY;
+  const connKey = process.env.GOOGLE_SHEETS_API_KEY ?? process.env.GOOGLE_SHEETS_API_KEY_1;
   if (!lovableKey) throw new Error("LOVABLE_API_KEY חסר");
   if (!connKey) throw new Error("Google Sheets לא מחובר (GOOGLE_SHEETS_API_KEY חסר)");
   return {
