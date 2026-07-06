@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -11,22 +11,11 @@ import { Truck } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
-  validateSearch: (s: Record<string, unknown>) => ({
-    next: typeof s.next === "string" ? s.next : undefined,
-  }),
   component: AuthPage,
 });
 
-function safeNext(next: string | undefined): string {
-  if (!next) return "/dashboard";
-  // Only allow same-origin relative paths
-  if (!next.startsWith("/") || next.startsWith("//")) return "/dashboard";
-  return next;
-}
-
 function AuthPage() {
-  const { next } = Route.useSearch();
-  const target = safeNext(next);
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,7 +28,7 @@ function AuthPage() {
     setLoading(false);
     if (error) return toast.error("שגיאת התחברות: " + error.message);
     toast.success("התחברת בהצלחה");
-    window.location.href = target;
+    navigate({ to: "/dashboard" });
   }
 
   async function handleSignUp(e: React.FormEvent) {
@@ -49,7 +38,7 @@ function AuthPage() {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}${target}`,
+        emailRedirectTo: `${window.location.origin}/dashboard`,
         data: { full_name: fullName },
       },
     });
