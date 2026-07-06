@@ -12,7 +12,7 @@ export const getSheetsStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async (): Promise<SheetsStatus> => {
     const lovableKey = process.env.LOVABLE_API_KEY;
-    const connKey = process.env.GOOGLE_SHEETS_API_KEY;
+    const connKey = process.env.GOOGLE_SHEETS_API_KEY ?? process.env.GOOGLE_SHEETS_API_KEY_1;
     if (!lovableKey || !connKey) {
       return {
         connected: false,
