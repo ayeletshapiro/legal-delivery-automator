@@ -659,7 +659,9 @@ export async function processIncomingMessage(
       return { ok: true, status: "missing_client" };
     }
 
-    const deliveryDate = isValidIsoDate(parsed.delivery_date) ? parsed.delivery_date : israelToday();
+    const deliveryDate = isValidIsoDate(parsed.delivery_date)
+      ? parsed.delivery_date
+      : israelDateOf(msg.created_at) ?? israelToday();
 
     const { data: existingDelivery, error: existingErr } = await supabase
       .from("deliveries")
