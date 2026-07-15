@@ -91,3 +91,51 @@ export const getLastDemoWipe = createServerFn({ method: "GET" })
     if (error) throw error;
     return data;
   });
+
+/**
+ * Re-run processing for every message of the current user that is currently
+ * stuck at status='missing_client'. Intended for a one-off cleanup after the
+ * "עבור X / הזמין Y" resolver fix — messages in other statuses are untouched.
+ */
+export const reprocessMissingClientMessages = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: isAdmin } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (!isAdmin) throw new Error("רק אדמין יכול להריץ מחדש הודעות");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { processIncomingMessage } = await import("./processing.server");
+
+    const { data: rows, error } = await supabaseAdmin
+      .from("incoming_messages")
+      .select("id")
+      .eq("status", "missing_client")
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+
+    const ids = (rows ?? []).map((r) => r.id);
+    let succeeded = 0;
+    let stillMissing = 0;
+    let failed = 0;
+    const details: Array<{ id: string; status: string; error: string | null }> = [];
+
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      try {
+        const res = await processIncomingMessage(supabaseAdmin, id);
+        if (res.status === "done") succeeded++;
+        else if (res.status === "missing_client") stillMissing++;
+        else failed++;
+        details.push({ id, status: res.status, error: res.errorMessage ?? null });
+      } catch (e) {
+        failed++;
+        details.push({ id, status: "failed", error: e instanceof Error ? e.message : String(e) });
+      }
+      if (i < ids.length - 1) await new Promise((r) => setTimeout(r, 400));
+    }
+
+    return { attempted: ids.length, succeeded, stillMissing, failed, details };
+  });

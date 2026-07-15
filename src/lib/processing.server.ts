@@ -110,21 +110,28 @@ const SYSTEM_PROMPT = `You extract a single legal-document delivery task from a 
 
 Return STRICT JSON only, matching this schema:
 {
-  "client_name": string | null,         // The LAW FIRM / LAWYER that ORDERED the delivery (the sender's identification). NOT the recipient.
+  "client_name": string | null,         // The LAW FIRM / LAWYER that ORDERED the delivery. MUST be one of the KNOWN_CLIENTS names/aliases listed below (exact string), or null.
   "description": string,                // Short Hebrew description of WHAT to deliver and TO WHOM/WHERE.
   "price": number | null,               // See PRICE & VAT rules below. null if no price mentioned.
   "delivery_date": string | null,       // ISO date YYYY-MM-DD if mentioned. null = today.
   "contact_ordered_by": string | null,  // Name of the person who placed the order, if mentioned.
   "notes": string | null,               // Extra remarks. Append a VAT note when applicable (see below).
-  "vat_explicit": boolean               // true only when the message explicitly stated before/after VAT. NOTE: this field is informational only and does NOT affect the after-VAT calculation — price is always net.
+  "vat_explicit": boolean               // true only when the message explicitly stated before/after VAT. NOTE: informational only.
 }
 
 CRITICAL RULES:
 - Output JSON only. No markdown, no commentary.
-- ALWAYS extract description, price, and date even if client_name is null. Extraction must still succeed.
+- ALWAYS extract description, price, and date even if client_name is null.
 - description is REQUIRED, non-empty Hebrew text describing the delivery task itself.
-- client_name: ONLY the ordering firm/lawyer at the START of the message (e.g. "הלפר", "כהן ושות׳", "משרד X").
-  * If the message starts directly with the task ("היום מסירה...", "מסירה ל...") → client_name = null. A name inside "ל[X]" is the RECIPIENT, not the client.
+
+CLIENT vs. CONTACT — MOST IMPORTANT:
+- The word immediately after "עבור" or "בשביל" is the CLIENT → goes into "client_name".
+- The word immediately after "הזמין" / "הזמינה" / "ביקש" / "ביקשה" is the ORDERING CONTACT → goes into "contact_ordered_by".
+- NEVER put a name that follows "הזמין"/"הזמינה" into "client_name", even if that name is listed in KNOWN_CLIENTS as an alias of some other client. In that context the name refers to a person who works at the client from "עבור", not to the aliased client.
+- Example: "…עבור גשר הזמין תהילה…" → client_name = "גשר", contact_ordered_by = "תהילה". Even if "תהילה" is a known alias, it is a person here.
+- If no "עבור" appears and the message starts directly with a task ("היום מסירה…") without a firm name, client_name = null. A name inside "ל[X]" is the RECIPIENT, not the client.
+- client_name MUST exactly match one of the KNOWN_CLIENTS names or aliases (case/whitespace as listed). If unsure, return null.
+
 - Numbers in Hebrew words: "שמונים שקל"=80, "מאה"=100, "מאה וחמישים"=150, "מאתיים"=200, "חמישים"=50.
 - Dates: "היום"=today, "מחר"=tomorrow. Use the provided "today" date as reference.
 
@@ -138,14 +145,29 @@ Input: "היום מסירה לעורך דין לוי בבני ברק, שמוני
 Output: {"client_name": null, "description": "מסירה לעורך דין לוי בבני ברק", "price": 80, "delivery_date": null, "contact_ordered_by": null, "notes": null, "vat_explicit": false}
 
 Input: "כהן ושות׳ — מחר מסירה לבית משפט השלום ת״א, 120 לפני מע\"מ"
-Output: {"client_name": "כהן ושות׳", "description": "מסירה לבית משפט השלום ת״א", "price": 120, "delivery_date": null, "contact_ordered_by": null, "notes": "מחיר בהודעה: 120₪ לפני מע\"מ", "vat_explicit": true}`;
+Output: {"client_name": "כהן ושות׳", "description": "מסירה לבית משפט השלום ת״א", "price": 120, "delivery_date": null, "contact_ordered_by": null, "notes": "מחיר בהודעה: 120₪ לפני מע\"מ", "vat_explicit": true}
 
-async function callLovableAI(rawText: string): Promise<ParsedDelivery> {
+Input: "תשלום בדואר עבור גשר הזמין תהילה הערה 5 שח עמלה"
+Output: {"client_name": "גשר", "description": "תשלום בדואר", "price": 5, "delivery_date": null, "contact_ordered_by": "תהילה", "notes": "עמלה", "vat_explicit": false}`;
+
+export interface KnownClient {
+  client_name: string;
+  aliases: string[];
+}
+
+function formatKnownClients(known: KnownClient[]): string {
+  if (!known.length) return "(none)";
+  return known
+    .map((k) => (k.aliases.length ? `- ${k.client_name} (כינויים: ${k.aliases.join(", ")})` : `- ${k.client_name}`))
+    .join("\n");
+}
+
+async function callLovableAI(rawText: string, knownClients: KnownClient[]): Promise<ParsedDelivery> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
 
   const today = israelToday();
-  const userPrompt = `today=${today}\n\nMESSAGE:\n${rawText}`;
+  const userPrompt = `today=${today}\n\nKNOWN_CLIENTS:\n${formatKnownClients(knownClients)}\n\nMESSAGE:\n${rawText}`;
 
   const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -199,6 +221,63 @@ function tokenize(s: string): string[] {
 }
 
 /**
+ * Trigger words that anchor client vs. contact roles in the message.
+ * - "עבור" / "בשביל" → the CLIENT (law firm/lawyer that ordered).
+ * - "הזמין" / "הזמינה" / "ביקש" / "ביקשה" → the ORDERING CONTACT (a person).
+ */
+const AVUR_TRIGGERS = new Set(["עבור", "בשביל"]);
+const HIZMIN_TRIGGERS = new Set(["הזמין", "הזמינה", "ביקש", "ביקשה"]);
+// Words that break the name capture window (either another trigger, a section
+// marker, or a common Hebrew "content" word that clearly isn't a name).
+const ANCHOR_STOP = new Set([
+  ...AVUR_TRIGGERS,
+  ...HIZMIN_TRIGGERS,
+  "הערה",
+  "הערות",
+  "מחיר",
+  "עמלה",
+  "שח",
+  "שקל",
+  "שקלים",
+  "היום",
+  "מחר",
+  "אתמול",
+  "תשלום",
+  "מסירה",
+  "איסוף",
+  "כולל",
+  "לפני",
+  "אחרי",
+  "מעמ",
+  "נטו",
+  "ברוטו",
+  "פלוס",
+  "בלי",
+]);
+
+/**
+ * Scan the (normalized) tokens for the words that come right after an
+ * anchor trigger. Captures up to 3 tokens per trigger, stopping at the next
+ * anchor/stop word or a numeric token.
+ */
+function extractAnchoredNames(rawText: string): { afterAvur: string[]; afterHizmin: string[] } {
+  const tokens = tokenize(rawText);
+  const afterAvur: string[] = [];
+  const afterHizmin: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    const target = AVUR_TRIGGERS.has(t) ? afterAvur : HIZMIN_TRIGGERS.has(t) ? afterHizmin : null;
+    if (!target) continue;
+    for (let j = i + 1; j < Math.min(i + 4, tokens.length); j++) {
+      const nxt = tokens[j];
+      if (!nxt || ANCHOR_STOP.has(nxt) || /^\d+$/.test(nxt)) break;
+      target.push(nxt);
+    }
+  }
+  return { afterAvur, afterHizmin };
+}
+
+/**
  * Resolve a client by AI-extracted name or by scanning the raw text for any
  * known client name / alias. On no match, returns { clientId: null, matched: false }.
  * The "מזדמנים" client is treated like any other client — no automatic fallback.
@@ -219,17 +298,51 @@ async function resolveClientId(
   const activeClients = clients ?? [];
   const allAliases = aliases ?? [];
 
-  if (clientName) {
-    const norm = normalize(clientName);
+  const { afterAvur, afterHizmin } = extractAnchoredNames(rawText);
+  const hizminMask = new Set(afterHizmin);
+
+  const tryExactMatch = (candidate: string): string | null => {
+    const norm = normalize(candidate);
+    if (!norm) return null;
     const aliasHit = allAliases.find((a) => normalize(a.alias) === norm);
-    if (aliasHit) return { clientId: aliasHit.client_id, matched: true };
+    if (aliasHit) return aliasHit.client_id;
     const nameHit = activeClients.find((c) => normalize(c.client_name) === norm);
-    if (nameHit) return { clientId: nameHit.id, matched: true };
+    if (nameHit) return nameHit.id;
+    return null;
+  };
+
+  // Step 0 — semantic anchor: the token(s) right after "עבור"/"בשביל" ARE the client.
+  // Try longest-first (joined) then shorter suffixes, so multi-word firms still match.
+  if (afterAvur.length > 0) {
+    const attempts: string[] = [];
+    for (let start = 0; start < afterAvur.length; start++) {
+      for (let end = afterAvur.length; end > start; end--) {
+        attempts.push(afterAvur.slice(start, end).join(" "));
+      }
+    }
+    for (const cand of attempts) {
+      const hit = tryExactMatch(cand);
+      if (hit) return { clientId: hit, matched: true };
+    }
   }
 
-  // Fallback 1: scan the raw message text for any alias or client name (full token-boundary match)
-  const textTokenList = tokenize(rawText);
+  // AI-extracted client_name — but ignore it if it is only present in the
+  // message as an ordering-contact ("הזמין X"), otherwise it will hijack an
+  // alias that belongs to a different client.
+  if (clientName) {
+    const norm = normalize(clientName);
+    if (!hizminMask.has(norm)) {
+      const hit = tryExactMatch(clientName);
+      if (hit) return { clientId: hit, matched: true };
+    }
+  }
+
+  // Build a token list of the raw message with the "הזמין X" tokens masked
+  // out, so a contact name never counts as a client match in the fallbacks.
+  const textTokenList = tokenize(rawText).filter((t) => !hizminMask.has(t));
   const textTokens = ` ${textTokenList.join(" ")} `;
+
+  // Fallback 1: full alias or full client name appears in text
   const candidates = new Set<string>();
   for (const a of allAliases) {
     const p = tokenize(a.alias).join(" ");
@@ -249,7 +362,6 @@ async function resolveClientId(
   // Fallback 2: distinctive single-token match. For each significant token in
   // a client name/alias (len >= 3), if it appears in the message AND it maps to
   // exactly one client across all known names/aliases, treat as a unique hit.
-  // This handles cases like client "הלפר / ירושלים" with message "עבור הלפר".
   const tokenToClients = new Map<string, Set<string>>();
   const addTokens = (clientId: string, phrase: string) => {
     for (const tok of tokenize(phrase)) {
@@ -488,7 +600,30 @@ export async function processIncomingMessage(
   };
 
   try {
-    const parsed = await callLovableAI(text);
+    // Load KNOWN_CLIENTS once (name + aliases) so the AI can pick an exact
+    // client_name and so we can pass a stable rawText to the resolver.
+    const [{ data: clientsRows }, { data: aliasRows }] = await Promise.all([
+      supabase
+        .from("clients")
+        .select("id, client_name")
+        .eq("user_id", msg.user_id)
+        .eq("is_archived", false),
+      supabase
+        .from("client_aliases")
+        .select("client_id, alias")
+        .eq("user_id", msg.user_id),
+    ]);
+    const aliasesByClient = new Map<string, string[]>();
+    for (const a of aliasRows ?? []) {
+      if (!aliasesByClient.has(a.client_id)) aliasesByClient.set(a.client_id, []);
+      aliasesByClient.get(a.client_id)!.push(a.alias);
+    }
+    const knownClients = (clientsRows ?? []).map((c) => ({
+      client_name: c.client_name,
+      aliases: aliasesByClient.get(c.id) ?? [],
+    }));
+
+    const parsed = await callLovableAI(text, knownClients);
     const { clientId, matched } = await resolveClientId(supabase, msg.user_id, parsed.client_name, text);
 
     // No client identified → fail the message, ask the user to resend with a client name.
