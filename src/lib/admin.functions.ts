@@ -120,7 +120,7 @@ export const reprocessMissingClientMessages = createServerFn({ method: "POST" })
     let succeeded = 0;
     let stillMissing = 0;
     let failed = 0;
-    const details: Array<{ id: string; status: string; error?: string }> = [];
+    const details: Array<{ id: string; status: string; error: string | null }> = [];
 
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
