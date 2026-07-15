@@ -600,7 +600,30 @@ export async function processIncomingMessage(
   };
 
   try {
-    const parsed = await callLovableAI(text);
+    // Load KNOWN_CLIENTS once (name + aliases) so the AI can pick an exact
+    // client_name and so we can pass a stable rawText to the resolver.
+    const [{ data: clientsRows }, { data: aliasRows }] = await Promise.all([
+      supabase
+        .from("clients")
+        .select("id, client_name")
+        .eq("user_id", msg.user_id)
+        .eq("is_archived", false),
+      supabase
+        .from("client_aliases")
+        .select("client_id, alias")
+        .eq("user_id", msg.user_id),
+    ]);
+    const aliasesByClient = new Map<string, string[]>();
+    for (const a of aliasRows ?? []) {
+      if (!aliasesByClient.has(a.client_id)) aliasesByClient.set(a.client_id, []);
+      aliasesByClient.get(a.client_id)!.push(a.alias);
+    }
+    const knownClients = (clientsRows ?? []).map((c) => ({
+      client_name: c.client_name,
+      aliases: aliasesByClient.get(c.id) ?? [],
+    }));
+
+    const parsed = await callLovableAI(text, knownClients);
     const { clientId, matched } = await resolveClientId(supabase, msg.user_id, parsed.client_name, text);
 
     // No client identified → fail the message, ask the user to resend with a client name.
