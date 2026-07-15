@@ -115,6 +115,18 @@ function SettingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const backfillFn = useServerFn(backfillDeliveryDatesFromMessages);
+  const backfillMut = useMutation({
+    mutationFn: () => backfillFn(),
+    onSuccess: (r: { scanned: number; updated: number; rewritten: number; failed: number }) => {
+      toast.success(
+        `נסרקו ${r.scanned} · עודכנו ${r.updated} · עודכנו בגיליון ${r.rewritten} · שגיאות ${r.failed}`,
+      );
+      qc.invalidateQueries();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   return (
     <div className="max-w-2xl space-y-6">
       {/* Header */}
