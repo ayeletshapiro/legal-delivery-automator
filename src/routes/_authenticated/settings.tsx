@@ -322,6 +322,25 @@ function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Admin: backfill delivery dates from original message dates */}
+      {isAdmin && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-2 border-b bg-muted/30 px-5 py-3">
+            <RefreshCw className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">תיקון תאריכי שליחויות מהריצה מחדש</span>
+          </div>
+          <CardContent className="space-y-3 p-5">
+            <p className="text-sm text-muted-foreground">
+              מחליף את תאריך היום של שליחויות שנוצרו היום בריצה מחדש בתאריך של ההודעה המקורית (מעדכן גם את הגיליון).
+            </p>
+            <Button onClick={() => backfillMut.mutate()} disabled={backfillMut.isPending}>
+              <RefreshCw className={`ml-1 h-4 w-4 ${backfillMut.isPending ? "animate-spin" : ""}`} />
+              {backfillMut.isPending ? "מתקן..." : "תקן תאריכים"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
