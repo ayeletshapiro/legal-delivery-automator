@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { getConfig, updateVatRate } from "@/lib/config.functions";
 import { getProfile, updateWhatsappPhone } from "@/lib/profile.functions";
-import { wipeDemoData, getLastDemoWipe } from "@/lib/admin.functions";
+import { wipeDemoData, getLastDemoWipe, reprocessMissingClientMessages } from "@/lib/admin.functions";
 import { getSheetsStatus } from "@/lib/sheets.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -100,6 +100,16 @@ function SettingsPage() {
       const total = Object.values(res.deleted).reduce((a, b) => a + b, 0);
       toast.success(`נמחקו ${total} רשומות דמו`);
       qc.invalidateQueries({ queryKey: ["last-demo-wipe"] });
+      qc.invalidateQueries();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const reprocessFn = useServerFn(reprocessMissingClientMessages);
+  const reprocessMut = useMutation({
+    mutationFn: () => reprocessFn(),
+    onSuccess: (r: { attempted: number; succeeded: number; stillMissing: number; failed: number }) => {
+      toast.success(`הורצו ${r.attempted} · הצליחו ${r.succeeded} · נותרו חסרי לקוח ${r.stillMissing} · שגיאות ${r.failed}`);
       qc.invalidateQueries();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -278,6 +288,25 @@ function SettingsPage() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Admin: reprocess missing_client messages */}
+      {isAdmin && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-2 border-b bg-muted/30 px-5 py-3">
+            <RefreshCw className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">הרצה מחדש של הודעות "חסר לקוח"</span>
+          </div>
+          <CardContent className="space-y-3 p-5">
+            <p className="text-sm text-muted-foreground">
+              מריץ מחדש את זיהוי הלקוח רק על הודעות שנמצאות כעת בסטטוס "חסר לקוח". הודעות אחרות לא נוגעים בהן.
+            </p>
+            <Button onClick={() => reprocessMut.mutate()} disabled={reprocessMut.isPending}>
+              <RefreshCw className={`ml-1 h-4 w-4 ${reprocessMut.isPending ? "animate-spin" : ""}`} />
+              {reprocessMut.isPending ? "מריץ..." : "הרץ מחדש"}
+            </Button>
           </CardContent>
         </Card>
       )}
