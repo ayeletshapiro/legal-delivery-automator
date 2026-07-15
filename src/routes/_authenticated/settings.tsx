@@ -291,6 +291,25 @@ function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Admin: reprocess missing_client messages */}
+      {isAdmin && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-2 border-b bg-muted/30 px-5 py-3">
+            <RefreshCw className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">הרצה מחדש של הודעות "חסר לקוח"</span>
+          </div>
+          <CardContent className="space-y-3 p-5">
+            <p className="text-sm text-muted-foreground">
+              מריץ מחדש את זיהוי הלקוח רק על הודעות שנמצאות כעת בסטטוס "חסר לקוח". הודעות אחרות לא נוגעים בהן.
+            </p>
+            <Button onClick={() => reprocessMut.mutate()} disabled={reprocessMut.isPending}>
+              <RefreshCw className={`ml-1 h-4 w-4 ${reprocessMut.isPending ? "animate-spin" : ""}`} />
+              {reprocessMut.isPending ? "מריץ..." : "הרץ מחדש"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
