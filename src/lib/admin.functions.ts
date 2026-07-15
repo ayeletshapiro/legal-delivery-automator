@@ -129,7 +129,7 @@ export const reprocessMissingClientMessages = createServerFn({ method: "POST" })
         if (res.status === "done") succeeded++;
         else if (res.status === "missing_client") stillMissing++;
         else failed++;
-        details.push({ id, status: res.status, error: res.errorMessage });
+        details.push({ id, status: res.status, error: res.errorMessage ?? null });
       } catch (e) {
         failed++;
         details.push({ id, status: "failed", error: e instanceof Error ? e.message : String(e) });
