@@ -110,21 +110,28 @@ const SYSTEM_PROMPT = `You extract a single legal-document delivery task from a 
 
 Return STRICT JSON only, matching this schema:
 {
-  "client_name": string | null,         // The LAW FIRM / LAWYER that ORDERED the delivery (the sender's identification). NOT the recipient.
+  "client_name": string | null,         // The LAW FIRM / LAWYER that ORDERED the delivery. MUST be one of the KNOWN_CLIENTS names/aliases listed below (exact string), or null.
   "description": string,                // Short Hebrew description of WHAT to deliver and TO WHOM/WHERE.
   "price": number | null,               // See PRICE & VAT rules below. null if no price mentioned.
   "delivery_date": string | null,       // ISO date YYYY-MM-DD if mentioned. null = today.
   "contact_ordered_by": string | null,  // Name of the person who placed the order, if mentioned.
   "notes": string | null,               // Extra remarks. Append a VAT note when applicable (see below).
-  "vat_explicit": boolean               // true only when the message explicitly stated before/after VAT. NOTE: this field is informational only and does NOT affect the after-VAT calculation — price is always net.
+  "vat_explicit": boolean               // true only when the message explicitly stated before/after VAT. NOTE: informational only.
 }
 
 CRITICAL RULES:
 - Output JSON only. No markdown, no commentary.
-- ALWAYS extract description, price, and date even if client_name is null. Extraction must still succeed.
+- ALWAYS extract description, price, and date even if client_name is null.
 - description is REQUIRED, non-empty Hebrew text describing the delivery task itself.
-- client_name: ONLY the ordering firm/lawyer at the START of the message (e.g. "הלפר", "כהן ושות׳", "משרד X").
-  * If the message starts directly with the task ("היום מסירה...", "מסירה ל...") → client_name = null. A name inside "ל[X]" is the RECIPIENT, not the client.
+
+CLIENT vs. CONTACT — MOST IMPORTANT:
+- The word immediately after "עבור" or "בשביל" is the CLIENT → goes into "client_name".
+- The word immediately after "הזמין" / "הזמינה" / "ביקש" / "ביקשה" is the ORDERING CONTACT → goes into "contact_ordered_by".
+- NEVER put a name that follows "הזמין"/"הזמינה" into "client_name", even if that name is listed in KNOWN_CLIENTS as an alias of some other client. In that context the name refers to a person who works at the client from "עבור", not to the aliased client.
+- Example: "…עבור גשר הזמין תהילה…" → client_name = "גשר", contact_ordered_by = "תהילה". Even if "תהילה" is a known alias, it is a person here.
+- If no "עבור" appears and the message starts directly with a task ("היום מסירה…") without a firm name, client_name = null. A name inside "ל[X]" is the RECIPIENT, not the client.
+- client_name MUST exactly match one of the KNOWN_CLIENTS names or aliases (case/whitespace as listed). If unsure, return null.
+
 - Numbers in Hebrew words: "שמונים שקל"=80, "מאה"=100, "מאה וחמישים"=150, "מאתיים"=200, "חמישים"=50.
 - Dates: "היום"=today, "מחר"=tomorrow. Use the provided "today" date as reference.
 
@@ -138,14 +145,29 @@ Input: "היום מסירה לעורך דין לוי בבני ברק, שמוני
 Output: {"client_name": null, "description": "מסירה לעורך דין לוי בבני ברק", "price": 80, "delivery_date": null, "contact_ordered_by": null, "notes": null, "vat_explicit": false}
 
 Input: "כהן ושות׳ — מחר מסירה לבית משפט השלום ת״א, 120 לפני מע\"מ"
-Output: {"client_name": "כהן ושות׳", "description": "מסירה לבית משפט השלום ת״א", "price": 120, "delivery_date": null, "contact_ordered_by": null, "notes": "מחיר בהודעה: 120₪ לפני מע\"מ", "vat_explicit": true}`;
+Output: {"client_name": "כהן ושות׳", "description": "מסירה לבית משפט השלום ת״א", "price": 120, "delivery_date": null, "contact_ordered_by": null, "notes": "מחיר בהודעה: 120₪ לפני מע\"מ", "vat_explicit": true}
 
-async function callLovableAI(rawText: string): Promise<ParsedDelivery> {
+Input: "תשלום בדואר עבור גשר הזמין תהילה הערה 5 שח עמלה"
+Output: {"client_name": "גשר", "description": "תשלום בדואר", "price": 5, "delivery_date": null, "contact_ordered_by": "תהילה", "notes": "עמלה", "vat_explicit": false}`;
+
+export interface KnownClient {
+  client_name: string;
+  aliases: string[];
+}
+
+function formatKnownClients(known: KnownClient[]): string {
+  if (!known.length) return "(none)";
+  return known
+    .map((k) => (k.aliases.length ? `- ${k.client_name} (כינויים: ${k.aliases.join(", ")})` : `- ${k.client_name}`))
+    .join("\n");
+}
+
+async function callLovableAI(rawText: string, knownClients: KnownClient[]): Promise<ParsedDelivery> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
 
   const today = israelToday();
-  const userPrompt = `today=${today}\n\nMESSAGE:\n${rawText}`;
+  const userPrompt = `today=${today}\n\nKNOWN_CLIENTS:\n${formatKnownClients(knownClients)}\n\nMESSAGE:\n${rawText}`;
 
   const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
