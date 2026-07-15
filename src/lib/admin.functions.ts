@@ -139,3 +139,96 @@ export const reprocessMissingClientMessages = createServerFn({ method: "POST" })
 
     return { attempted: ids.length, succeeded, stillMissing, failed, details };
   });
+
+/** Convert an ISO timestamp to YYYY-MM-DD in Asia/Jerusalem. */
+function israelDateOf(iso: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(iso));
+  const y = parts.find((p) => p.type === "year")!.value;
+  const m = parts.find((p) => p.type === "month")!.value;
+  const d = parts.find((p) => p.type === "day")!.value;
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Fix deliveries created during the missing_client reprocess that got today's
+ * date instead of the original message date. Updates delivery_date in the DB
+ * and the date cell in the corresponding Google Sheet row.
+ */
+export const backfillDeliveryDatesFromMessages = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: isAdmin } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (!isAdmin) throw new Error("רק אדמין יכול להריץ תיקון תאריכים");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { updateDeliveryDateCell } = await import("./sheets.server");
+
+    // Today in Asia/Jerusalem — used to scope to "just reprocessed" rows.
+    const today = israelDateOf(new Date().toISOString());
+
+    const { data: rows, error } = await supabaseAdmin
+      .from("deliveries")
+      .select(
+        "id, message_id, client_id, delivery_date, sheet_name, row_number, created_at, incoming_messages!inner(created_at)",
+      )
+      .eq("delivery_date", today)
+      .gte("created_at", `${today}T00:00:00Z`);
+    if (error) throw error;
+
+    let scanned = 0;
+    let updated = 0;
+    let rewritten = 0;
+    let failed = 0;
+    const details: Array<{ id: string; from: string; to: string; sheet: string | null; error: string | null }> = [];
+
+    for (const row of rows ?? []) {
+      scanned++;
+      const msg = (row as unknown as { incoming_messages: { created_at: string } }).incoming_messages;
+      if (!msg?.created_at) continue;
+      const correct = israelDateOf(msg.created_at);
+      if (correct === today) continue; // message really was from today
+
+      // Update DB.
+      const { error: updErr } = await supabaseAdmin
+        .from("deliveries")
+        .update({ delivery_date: correct })
+        .eq("id", row.id);
+      if (updErr) {
+        failed++;
+        details.push({ id: row.id, from: today, to: correct, sheet: row.sheet_name, error: updErr.message });
+        continue;
+      }
+      updated++;
+
+      // Update the sheet cell if we know where it was written.
+      if (row.sheet_name && row.row_number) {
+        const { data: clientRow } = await supabaseAdmin
+          .from("clients")
+          .select("google_sheet_id")
+          .eq("id", row.client_id)
+          .maybeSingle();
+        const sheetId = clientRow?.google_sheet_id?.trim() || null;
+        if (sheetId) {
+          const res = await updateDeliveryDateCell(sheetId, row.sheet_name, row.row_number, correct);
+          if (res.ok) rewritten++;
+          else {
+            failed++;
+            details.push({ id: row.id, from: today, to: correct, sheet: row.sheet_name, error: res.error ?? null });
+            continue;
+          }
+        }
+      }
+      details.push({ id: row.id, from: today, to: correct, sheet: row.sheet_name, error: null });
+    }
+
+    return { scanned, updated, rewritten, failed, details };
+  });
+

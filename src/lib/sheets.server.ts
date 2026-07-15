@@ -323,3 +323,33 @@ export async function appendDeliveryToSheet(
     return { ok: false, error: msg };
   }
 }
+
+/** Update just the date cell (column A) of an existing delivery row. */
+export async function updateDeliveryDateCell(
+  spreadsheetId: string,
+  sheetName: string,
+  rowNumber: number,
+  isoDate: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    if (!spreadsheetId || !sheetName || !rowNumber) {
+      return { ok: false, error: "חסרים פרטי גיליון/שורה" };
+    }
+    const range = `${sheetName}!A${rowNumber}`;
+    const resp = await gatewayFetch(
+      `/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ range, majorDimension: "ROWS", values: [[formatDate(isoDate)]] }),
+      },
+    );
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      return { ok: false, error: `שגיאה ${resp.status}: ${body.slice(0, 200)}` };
+    }
+    return { ok: true };
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : "שגיאה לא ידועה בעדכון תאריך" };
+  }
+}
+

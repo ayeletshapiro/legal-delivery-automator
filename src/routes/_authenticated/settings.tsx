@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { getConfig, updateVatRate } from "@/lib/config.functions";
 import { getProfile, updateWhatsappPhone } from "@/lib/profile.functions";
-import { wipeDemoData, getLastDemoWipe, reprocessMissingClientMessages } from "@/lib/admin.functions";
+import { wipeDemoData, getLastDemoWipe, reprocessMissingClientMessages, backfillDeliveryDatesFromMessages } from "@/lib/admin.functions";
 import { getSheetsStatus } from "@/lib/sheets.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,6 +110,18 @@ function SettingsPage() {
     mutationFn: () => reprocessFn(),
     onSuccess: (r: { attempted: number; succeeded: number; stillMissing: number; failed: number }) => {
       toast.success(`הורצו ${r.attempted} · הצליחו ${r.succeeded} · נותרו חסרי לקוח ${r.stillMissing} · שגיאות ${r.failed}`);
+      qc.invalidateQueries();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const backfillFn = useServerFn(backfillDeliveryDatesFromMessages);
+  const backfillMut = useMutation({
+    mutationFn: () => backfillFn(),
+    onSuccess: (r: { scanned: number; updated: number; rewritten: number; failed: number }) => {
+      toast.success(
+        `נסרקו ${r.scanned} · עודכנו ${r.updated} · עודכנו בגיליון ${r.rewritten} · שגיאות ${r.failed}`,
+      );
       qc.invalidateQueries();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -306,6 +318,25 @@ function SettingsPage() {
             <Button onClick={() => reprocessMut.mutate()} disabled={reprocessMut.isPending}>
               <RefreshCw className={`ml-1 h-4 w-4 ${reprocessMut.isPending ? "animate-spin" : ""}`} />
               {reprocessMut.isPending ? "מריץ..." : "הרץ מחדש"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Admin: backfill delivery dates from original message dates */}
+      {isAdmin && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-2 border-b bg-muted/30 px-5 py-3">
+            <RefreshCw className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">תיקון תאריכי שליחויות מהריצה מחדש</span>
+          </div>
+          <CardContent className="space-y-3 p-5">
+            <p className="text-sm text-muted-foreground">
+              מחליף את תאריך היום של שליחויות שנוצרו היום בריצה מחדש בתאריך של ההודעה המקורית (מעדכן גם את הגיליון).
+            </p>
+            <Button onClick={() => backfillMut.mutate()} disabled={backfillMut.isPending}>
+              <RefreshCw className={`ml-1 h-4 w-4 ${backfillMut.isPending ? "animate-spin" : ""}`} />
+              {backfillMut.isPending ? "מתקן..." : "תקן תאריכים"}
             </Button>
           </CardContent>
         </Card>
