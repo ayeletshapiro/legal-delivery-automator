@@ -221,6 +221,63 @@ function tokenize(s: string): string[] {
 }
 
 /**
+ * Trigger words that anchor client vs. contact roles in the message.
+ * - "עבור" / "בשביל" → the CLIENT (law firm/lawyer that ordered).
+ * - "הזמין" / "הזמינה" / "ביקש" / "ביקשה" → the ORDERING CONTACT (a person).
+ */
+const AVUR_TRIGGERS = new Set(["עבור", "בשביל"]);
+const HIZMIN_TRIGGERS = new Set(["הזמין", "הזמינה", "ביקש", "ביקשה"]);
+// Words that break the name capture window (either another trigger, a section
+// marker, or a common Hebrew "content" word that clearly isn't a name).
+const ANCHOR_STOP = new Set([
+  ...AVUR_TRIGGERS,
+  ...HIZMIN_TRIGGERS,
+  "הערה",
+  "הערות",
+  "מחיר",
+  "עמלה",
+  "שח",
+  "שקל",
+  "שקלים",
+  "היום",
+  "מחר",
+  "אתמול",
+  "תשלום",
+  "מסירה",
+  "איסוף",
+  "כולל",
+  "לפני",
+  "אחרי",
+  "מעמ",
+  "נטו",
+  "ברוטו",
+  "פלוס",
+  "בלי",
+]);
+
+/**
+ * Scan the (normalized) tokens for the words that come right after an
+ * anchor trigger. Captures up to 3 tokens per trigger, stopping at the next
+ * anchor/stop word or a numeric token.
+ */
+function extractAnchoredNames(rawText: string): { afterAvur: string[]; afterHizmin: string[] } {
+  const tokens = tokenize(rawText);
+  const afterAvur: string[] = [];
+  const afterHizmin: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    const target = AVUR_TRIGGERS.has(t) ? afterAvur : HIZMIN_TRIGGERS.has(t) ? afterHizmin : null;
+    if (!target) continue;
+    for (let j = i + 1; j < Math.min(i + 4, tokens.length); j++) {
+      const nxt = tokens[j];
+      if (!nxt || ANCHOR_STOP.has(nxt) || /^\d+$/.test(nxt)) break;
+      target.push(nxt);
+    }
+  }
+  return { afterAvur, afterHizmin };
+}
+
+/**
  * Resolve a client by AI-extracted name or by scanning the raw text for any
  * known client name / alias. On no match, returns { clientId: null, matched: false }.
  * The "מזדמנים" client is treated like any other client — no automatic fallback.
@@ -241,17 +298,51 @@ async function resolveClientId(
   const activeClients = clients ?? [];
   const allAliases = aliases ?? [];
 
-  if (clientName) {
-    const norm = normalize(clientName);
+  const { afterAvur, afterHizmin } = extractAnchoredNames(rawText);
+  const hizminMask = new Set(afterHizmin);
+
+  const tryExactMatch = (candidate: string): string | null => {
+    const norm = normalize(candidate);
+    if (!norm) return null;
     const aliasHit = allAliases.find((a) => normalize(a.alias) === norm);
-    if (aliasHit) return { clientId: aliasHit.client_id, matched: true };
+    if (aliasHit) return aliasHit.client_id;
     const nameHit = activeClients.find((c) => normalize(c.client_name) === norm);
-    if (nameHit) return { clientId: nameHit.id, matched: true };
+    if (nameHit) return nameHit.id;
+    return null;
+  };
+
+  // Step 0 — semantic anchor: the token(s) right after "עבור"/"בשביל" ARE the client.
+  // Try longest-first (joined) then shorter suffixes, so multi-word firms still match.
+  if (afterAvur.length > 0) {
+    const attempts: string[] = [];
+    for (let start = 0; start < afterAvur.length; start++) {
+      for (let end = afterAvur.length; end > start; end--) {
+        attempts.push(afterAvur.slice(start, end).join(" "));
+      }
+    }
+    for (const cand of attempts) {
+      const hit = tryExactMatch(cand);
+      if (hit) return { clientId: hit, matched: true };
+    }
   }
 
-  // Fallback 1: scan the raw message text for any alias or client name (full token-boundary match)
-  const textTokenList = tokenize(rawText);
+  // AI-extracted client_name — but ignore it if it is only present in the
+  // message as an ordering-contact ("הזמין X"), otherwise it will hijack an
+  // alias that belongs to a different client.
+  if (clientName) {
+    const norm = normalize(clientName);
+    if (!hizminMask.has(norm)) {
+      const hit = tryExactMatch(clientName);
+      if (hit) return { clientId: hit, matched: true };
+    }
+  }
+
+  // Build a token list of the raw message with the "הזמין X" tokens masked
+  // out, so a contact name never counts as a client match in the fallbacks.
+  const textTokenList = tokenize(rawText).filter((t) => !hizminMask.has(t));
   const textTokens = ` ${textTokenList.join(" ")} `;
+
+  // Fallback 1: full alias or full client name appears in text
   const candidates = new Set<string>();
   for (const a of allAliases) {
     const p = tokenize(a.alias).join(" ");
@@ -271,7 +362,6 @@ async function resolveClientId(
   // Fallback 2: distinctive single-token match. For each significant token in
   // a client name/alias (len >= 3), if it appears in the message AND it maps to
   // exactly one client across all known names/aliases, treat as a unique hit.
-  // This handles cases like client "הלפר / ירושלים" with message "עבור הלפר".
   const tokenToClients = new Map<string, Set<string>>();
   const addTokens = (clientId: string, phrase: string) => {
     for (const tok of tokenize(phrase)) {
