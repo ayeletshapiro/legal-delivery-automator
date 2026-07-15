@@ -105,6 +105,16 @@ function SettingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const reprocessFn = useServerFn(reprocessMissingClientMessages);
+  const reprocessMut = useMutation({
+    mutationFn: () => reprocessFn(),
+    onSuccess: (r: { attempted: number; succeeded: number; stillMissing: number; failed: number }) => {
+      toast.success(`הורצו ${r.attempted} · הצליחו ${r.succeeded} · נותרו חסרי לקוח ${r.stillMissing} · שגיאות ${r.failed}`);
+      qc.invalidateQueries();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   return (
     <div className="max-w-2xl space-y-6">
       {/* Header */}
