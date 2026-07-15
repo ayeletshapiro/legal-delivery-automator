@@ -26,6 +26,24 @@ function israelToday(): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Convert an ISO timestamp to YYYY-MM-DD in Asia/Jerusalem. Returns null if invalid. */
+function israelDateOf(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const y = parts.find((p) => p.type === "year")!.value;
+  const m = parts.find((p) => p.type === "month")!.value;
+  const day = parts.find((p) => p.type === "day")!.value;
+  return `${y}-${m}-${day}`;
+}
+
+
 /** Validate YYYY-MM-DD as a real calendar date. */
 function isValidIsoDate(s: string | null | undefined): s is string {
   if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
